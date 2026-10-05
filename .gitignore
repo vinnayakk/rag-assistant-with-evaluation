@@ -2,3 +2,4 @@
 outputs/
 SOURCE.md
 MESSY_NOTES.md
+__pycache__/
