@@ -2,4 +2,7 @@
 outputs/
 SOURCE.md
 MESSY_NOTES.md
+
+# Python compiled files & cache
 __pycache__/
+*.py[cod]
