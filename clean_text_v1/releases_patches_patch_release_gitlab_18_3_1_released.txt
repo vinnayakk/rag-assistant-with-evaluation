@@ -1,0 +1,154 @@
+GitLab Patch Release: 18.3.1, 18.2.5, 18.1.5
+
+/
+GitLab Patch Release: 18.3.1, 18.2.5, 18.1.5
+On August 27, 2025, we released versions 18.3.1, 18.2.5, 18.1.5 for GitLab Community Edition (CE) and Enterprise Edition (EE).
+These versions contain important bug and security fixes, and we strongly recommend that all self-managed GitLab installations be upgraded to
+one of these versions immediately. GitLab.com is already running the patched version. GitLab Dedicated customers do not need to take action.
+GitLab releases fixes for vulnerabilities in patch releases. There are two types of patch releases:
+scheduled releases and ad-hoc critical patches for high-severity vulnerabilities. Scheduled releases are released twice a month on the second and fourth Wednesdays.
+For more information, please visit our
+releases handbook
+and
+security FAQ
+.
+You can see all of GitLab release blog posts
+here
+.
+For security fixes, the issues detailing each vulnerability are made public on our
+issue tracker
+30 days after the release in which they were patched.
+We are committed to ensuring that all aspects of GitLab that are exposed to customers or that host customer data are held to
+the highest security standards. To maintain good security hygiene, it is highly recommended that all customers
+upgrade to the latest patch release for their supported version. You can read more
+best practices in securing your GitLab instance
+in our blog post.
+Recommended Action
+We
+strongly recommend
+that all installations running a version affected by the issues described below are
+upgraded to the latest version as soon as possible
+.
+When no specific deployment type (omnibus, source code, helm chart, etc.) of a product is mentioned, it means all types are affected.
+Security fixes
+Table of security fixes
+Title
+Severity
+Allocation of Resources Without Limits issue in import function impacts GitLab CE/EE
+Medium
+Missing authentication issue in GraphQL endpoint impacts GitLab CE/EE
+Medium
+Allocation of Resources Without Limits issue in GraphQL impacts GitLab CE/EE
+Medium
+Code injection issue in GitLab repositories impacts GitLab CE/EE
+Medium
+CVE-2025-3601
+- Allocation of Resources Without Limits issue in import function impacts GitLab CE/EE
+GitLab has remediated an issue that could have allowed an authenticated user to cause a Denial of Service (DoS) condition by submitting URLs that generate excessively large responses.
+Impacted Versions
+: GitLab CE/EE: all versions from 8.15 before 18.1.5, 18.2 before 18.2.5, and 18.3 before 18.3.1
+CVSS
+: 6.5 (
+CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:H
+)
+Thanks
+nermalt
+for reporting this vulnerability through our HackerOne bug bounty program.
+CVE-2025-2246
+- Missing authentication issue in GraphQL endpoint impacts GitLab CE/EE
+GitLab has remediated an issue that could have allowed unauthenticated users to access sensitive manual CI/CD variables by querying the GraphQL API.
+Impacted Versions
+: GitLab CE/EE: all versions before 18.1.5, 18.2 before 18.2.5, and 18.3 before 18.3.1
+CVSS
+: 5.8 (
+CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:L/I:N/A:N
+)
+Thanks
+pwnie
+for reporting this vulnerability through our HackerOne bug bounty program.
+CVE-2025-4225
+- Allocation of Resources Without Limits issue in GraphQL impacts GitLab CE/EE
+GitLab has remediated an issue that under certain conditions could have allowed an unauthenticated attacker to cause a denial-of-service condition affecting all users by sending specially crafted GraphQL requests.
+Impacted Versions
+: GitLab CE/EE: all versions from 14.1 before 18.1.5, 18.2 before 18.2.5, and 18.3 before 18.3.1
+CVSS
+: 5.3 (
+CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L
+)
+Thanks
+pwnie
+for reporting this vulnerability through our HackerOne bug bounty program.
+CVE-2025-5101
+- Code injection issue in GitLab repositories impacts GitLab CE/EE
+GitLab has remediated an issue that under certain conditions could have allowed an authenticated attacker to distribute malicious code that appears harmless in the web interface by taking advantage of ambiguity between branches and tags during repository imports.
+Impacted Versions
+: GitLab CE/EE: all versions before 18.1.5, 18.2 before 18.2.5, and 18.3 before 18.3.1
+CVSS
+: 5.0 (
+CVSS:3.1/AV:L/AC:H/PR:H/UI:R/S:C/C:N/I:H/A:N
+).
+Thanks
+st4nly0n
+for reporting this vulnerability through our HackerOne bug bounty program.
+Bug fixes
+18.3.1
+[Backport 18.3] Making changes for container scanning for SBOMs
+Backport of ‘Fix cannot load such file – gitlab’
+Backport: Fix namespace issue preventing Ci::Build filtering optimization
+Backport of “Dependency Path creation with path caching”
+Fix trusted proxies regression when hostname is specified
+Backport of E2E test: use correct checkbox method
+Update Mattermost to v10.10.2
+18.2.5
+[Backport 18.2] Making changes for container scanning for SBOMs
+[18.2] Fix flaky specs due to label ordering
+Backport ‘Danger to fail backport MRs without descriptive title’
+Backport bug - Fix mutations of frozen object in feature_setting.rb
+Add stage check for agentic chat
+Backport of ‘update the active_add_on_purchase check to include self-managed check’
+Backport of “Create noop pipeline template compatible with test-on-omnibus”
+Backport of ‘Fix cannot load such file – gitlab’
+Backport of E2E test: use correct checkbox method
+Backport of ‘Ignore silent_mode in clickhouse http calls’
+18.1.5
+Backport “Danger to not error when e2e:test-on-omnibus-ee job not present for only QA changes” to 18.1
+Backport Set :throttled urgency for GlobalAdvisoryScanWorker
+Backport ‘Add job and script to update backport MR label after deployment’
+Backport ‘Update gitlab-chart digest to 9d9e150’
+Backport of ‘fix missing ref attribute’
+[18.1] Fix flaky specs due to label ordering
+Backport ‘Danger to fail backport MRs without descriptive title’
+Backport of ‘update the active_add_on_purchase check to include self-managed check’
+Backport of E2E test: use correct checkbox method
+Backport of “Create noop pipeline template compatible with test-on-omnibus”
+Important notes on upgrading
+These versions do not include any new migrations, and for multi-node deployments,
+should not require any downtime
+.
+Please be aware that by default the Omnibus packages will stop, run migrations,
+and start again, no matter how “big” or “small” the upgrade is. This behavior
+can be changed by adding a
+/etc/gitlab/skip-auto-reconfigure
+file,
+which is only used for
+updates
+.
+Updating
+To update GitLab, see the
+Update page
+.
+To update Gitlab Runner, see the
+Updating the Runner page
+.
+Receive Patch Notifications
+To receive patch blog notifications delivered to your inbox, visit our
+contact us
+page.
+To receive release notifications via RSS, subscribe to our
+patch release RSS feed
+or our
+RSS feed for all releases
+.
+Was this page helpful?
+Yes
+No

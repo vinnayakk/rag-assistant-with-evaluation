@@ -1,0 +1,216 @@
+Design and user interface changes
+
+/
+Design and user interface changes
+Follow these guidelines when contributing or reviewing design and user interface
+(UI) changes. Refer to our
+code review guide
+for broader
+advice and best practices for code review in general.
+The basis for most of these guidelines is
+Pajamas
+,
+GitLab design system. We encourage you to
+contribute to Pajamas
+with additions and improvements.
+Merge request reviews
+As a merge request (MR) author, you must:
+Include
+Before
+and
+After
+screenshots (or videos) of your changes in the description, as explained in our
+MR workflow
+. These screenshots/videos are very helpful
+for all reviewers and can speed up the review process, especially if the changes
+are small.
+Attach the ~UX label to any merge request that has any user facing changes. This will trigger our
+Reviewer Roulette to suggest a UX
+reviewer
+.
+If you are a
+team member
+: We recommend assigning the Product Designer suggested by the
+Reviewer Roulette
+as reviewer.
+This helps us
+spread work evenly, improve communication, and make our UI more
+consistent. If you have a reason to choose a different reviewer, add a comment to mention you assigned
+it to a Product Designer of your choice.
+If you are a
+community contributor
+: We favor choosing the Product Designer that is a
+domain expert
+in the area you are contributing, regardless
+of the Reviewer Roulette.
+Checklist
+Check these aspects both when
+designing
+and
+reviewing
+UI changes.
+Writing
+Follow
+Pajamas
+as the primary
+guidelines for UI text and
+documentation style guide
+as the secondary.
+Use clear and consistent terminology.
+Check grammar and spelling.
+Consider help content and follow its
+guidelines
+.
+Request review from the
+appropriate Technical Writer
+,
+indicating any specific files or lines they should review, and how to preview
+or understand the location/context of the text from the user’s perspective.
+Patterns
+Consider similar patterns used in the product and justify in the issue when diverging
+from them.
+Use appropriate
+components
+and
+data visualizations
+.
+Visual design
+Check visual design properties using your browser’s elements inspector (
+Chrome
+,
+Firefox
+).
+The design system provides
+design tokens
+and
+components
+that work in supported modes.
+Use recommended
+colors based on semantic meaning
+as part of designing a unified product experience. These color combinations are supported in all modes.
+Follow
+typography guidelines
+.
+Follow
+layout guidelines
+.
+Use existing
+icons
+and
+illustrations
+or propose new ones according to
+iconography
+and
+illustration
+guidelines.
+Account for all
+supported modes
+.
+The design system provides
+design tokens
+and
+components
+that work in supported modes.
+Take extra care when mode is a primary factor in customer outcomes.
+Dark mode design must align with the
+dark mode principles
+.
+States
+Check states using your browser’s
+styles inspector
+to toggle CSS pseudo-classes
+like
+:hover
+and others (
+Chrome
+,
+Firefox
+).
+Account for all applicable states (error, rest, loading, focus, hover, selected, disabled).
+Account for states dependent on data size (
+empty
+,
+some data, and lots of data).
+Account for states dependent on user role, user preferences, and subscription.
+Consider animations and transitions, and follow their
+guidelines
+.
+Responsive
+Check responsive behavior using your browser’s
+responsive mode
+(
+Chrome
+,
+Firefox
+).
+Account for resizing, collapsing, moving, or wrapping of elements across
+all breakpoints (even if larger viewports are prioritized).
+Provide the same information and actions in all breakpoints.
+Accessibility
+Check accessibility using your browser’s
+accessibility inspector
+(
+Chrome
+,
+Firefox
+).
+Conform to level AA of the World Wide Web Consortium (W3C)
+Web Content Accessibility Guidelines 2.1
+,
+according to our
+statement of compliance
+.
+Follow accessibility
+Pajamas’ best practices
+and read the accessibility developer documentation’s
+checklist
+.
+Handoff
+When the design is ready,
+before
+starting its implementation:
+Share design specifications in the related issue, preferably through a
+Figma link
+or
+GitLab Designs feature
+.
+See
+when you should use each tool
+.
+Document user flow and states (for example, using
+Mermaid flowcharts in Markdown
+).
+Document
+design tokens
+(for example using the
+design token annotation
+in Figma).
+Document animations and transitions.
+Document responsive behaviors.
+Document non-evident behaviors (for example, field is auto-focused).
+Document accessibility behaviors (for example, using
+accessibility annotations in Figma
+).
+Contribute new icons or illustrations to the
+GitLab SVGs
+project.
+Follow-ups
+At any moment, but usually
+during
+or
+after
+the design’s implementation:
+Contribute
+issues to Pajamas
+for additions or enhancements to the design system.
+Create issues with the
+~Deferred UX
+label for intentional deviations from the agreed-upon UX requirements due to
+time or feasibility challenges, linking back to the corresponding issues or
+merge requests.
+Create issues for
+feature additions or enhancements
+outside the agreed-upon UX requirements to avoid scope creep.
+Was this page helpful?
+Yes
+No

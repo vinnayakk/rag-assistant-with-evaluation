@@ -1,0 +1,155 @@
+Continuous container scanning
+
+/
+Continuous container scanning
+Tier
+: Ultimate
+Offering
+: GitLab.com, GitLab Self-Managed, GitLab Dedicated
+History
+Continuous container scanning
+introduced
+in GitLab 16.8
+with a feature flag
+named
+container_scanning_continuous_vulnerability_scans
+. Disabled by default.
+Continuous container scanning
+enabled on GitLab Self-Managed, and GitLab Dedicated
+in GitLab 16.10.
+Generally available
+in GitLab 17.0. Feature flag
+container_scanning_continuous_vulnerability_scans
+removed.
+Continuous vulnerability scanning (CVS) for container scanning looks for security vulnerabilities in your project’s image dependencies by comparing their component names and versions against information in the latest
+security advisories
+without requiring a new pipeline to run.
+CVS relies on a CycloneDX SBOM report stored on the default branch to know which components your project uses. To produce this SBOM, a container scanning job must run at least once on the default branch. From then on, CVS detects newly published advisories against those components automatically, with no further pipeline runs required.
+When your image contents change, a new pipeline must run on the default branch to refresh the SBOM so CVS can evaluate the updated set of components. In most projects this happens as part of the regular workflow, because changing dependencies typically involves a code change that already triggers a pipeline.
+New vulnerabilities may arise
+when continuous vulnerability scanning triggers scans on all projects that contain components with
+supported package types
+.
+Vulnerabilities created by continuous vulnerability scanning for container scanning use
+GitLab SBoM Vulnerability Scanner
+as the scanner name and
+Container Scanning
+as the vulnerability type.
+In contrast to CI/CD-based security scans, continuous vulnerability scanning is executed through background jobs (Sidekiq) rather than CI/CD pipelines and no Security report artifacts are generated.
+Prerequisites
+A CycloneDX SBOM report
+.
+Security advisories
+synchronized to the GitLab instance.
+Supported package types
+Continuous vulnerability scanning supports components with the following
+PURL types
+:
+apk
+deb
+rpm
+Known limitations:
+APK versions containing leading zeros are not supported. Work to support these versions is tracked in
+issue 471509
+.
+RPM versions containing
+^
+are not supported. Work to support these versions is tracked in
+issue 459969
+.
+RPM packages in Red Hat distributions are not supported. Work to support this use case is tracked in
+epic 12980
+.
+How to generate a CycloneDX SBOM report
+Use a
+CycloneDX SBOM report
+to register your project components with GitLab.
+The CycloneDX reports must comply with:
+the CycloneDX specification
+version
+1.4
+,
+1.5
+, or
+1.6
+.
+the GitLab CycloneDX property taxonomy for container scanning
+.
+GitLab offers security analyzers that can generate a report compatible with GitLab:
+Container scanning
+Container scanning for registry
+Turn on or off continuous vulnerability scanning
+History
+Introduced
+in GitLab 19.0
+with a flag
+named
+cvs_per_scanner_type_settings
+. Disabled by default.
+Generally available
+in GitLab 19.2. Feature flag
+cvs_per_scanner_type_settings
+removed.
+Continuous vulnerability scanning runs by default on all ingested CycloneDX SBOM files.
+You can turn it off for each project. While it’s off, vulnerability records aren’t created
+for your image dependencies when new security advisories are ingested.
+Prerequisites:
+You must have the Maintainer, Owner, or Security Manager role for the project.
+To turn on or off continuous vulnerability scanning:
+In the top bar, select
+Search or go to
+and find your project.
+In the left sidebar, select
+Secure
+>
+Security configuration
+.
+Under
+Continuous Vulnerability Scanning for Container Scanning
+, turn on or turn off the toggle.
+Checking new vulnerabilities
+New vulnerabilities detected by continuous vulnerability scanning are visible on the
+vulnerability report
+.
+However, they are not listed in the pipeline where the affected SBOM component was detected.
+Vulnerabilities are created after a
+security advisory
+is added or updated. It may take a few hours for
+the corresponding vulnerabilities to be added to your projects, provided the codebase remains unchanged. Only advisories published within the last 14 days
+are considered for continuous vulnerability scanning.
+When vulnerabilities are no longer detected
+Continuous vulnerability scanning automatically creates vulnerabilities when a new advisory is published,
+but it is not able to tell when a vulnerability is no longer present in the project. To do so, GitLab
+still requires a
+container scanning
+scan executed in a pipeline for the default branch,
+and a corresponding security report artifact generated with the up-to-date information. When these reports
+are processed, and when they no longer contain some vulnerabilities, these are flagged as such even if
+they were created by continuous vulnerability scanning.
+Vulnerabilities detected through container scanning for registry cannot be resolved using this
+method and remain visible even after you fix them in your images. This occurs because Container
+Scanning for Registry generates only SBOMs, not the security reports required to mark
+vulnerabilities as resolved.
+Security advisories
+Continuous vulnerability scanning uses the Package Metadata Database, a service managed by GitLab which aggregates license and security advisory data, and regularly publishes updates that are used by GitLab.com and GitLab Self-Managed instances.
+On GitLab.com, the synchronization is managed by GitLab and is available to all projects.
+On GitLab Self-Managed, you can
+choose package registry metadata to synchronize
+in the
+Admin
+area for the GitLab instance.
+Data sources
+Current data sources for security advisories include:
+Trivy DB
+, built from Aqua security’s
+vuln-list repository
+Contributing to the vulnerability database
+To find a vulnerability, you can search the Aqua security’s
+vuln-list repository
+containing raw data.
+You can also
+contribute
+to Trivy-DB.
+Was this page helpful?
+Yes
+No

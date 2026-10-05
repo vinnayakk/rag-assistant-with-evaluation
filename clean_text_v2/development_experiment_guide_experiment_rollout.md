@@ -1,0 +1,92 @@
+# Experiment rollouts and feature flags
+
+/
+
+---
+
+# Experiment rollouts and feature flags
+
+## Experiment rollout issue
+
+Each experiment should have an [experiment rollout](https://gitlab.com/groups/gitlab-org/-/boards/1352542) issue to track the experiment from rollout through to cleanup and removal.
+The rollout issue is similar to a feature flag rollout issue, and is also used to track the status of an experiment.
+
+When an experiment is deployed, the due date of the issue should be set (this depends on the experiment but can be up to a few weeks in the future).
+After the deadline, the issue must be resolved and either:
+
+* It was successful and the experiment becomes the new default.
+* It was not successful and all code related to the experiment is removed.
+
+In either case, an outcome of the experiment should be posted to the issue with the reasoning for the decision.
+
+## Experiment validation approach
+
+Validate an experiment at different stages of the development lifecycle:
+
+| Stage | What to validate | Tools |
+| --- | --- | --- |
+| Local development | Event structure (schema, fields, values). | [Snowplow Micro](/development/internal_analytics/internal_event_instrumentation/local_setup_and_debugging/#snowplow-micro). |
+| Staging | Events are received in Snowplow. | [Growth Experiment Event Validation Dashboard](https://10az.online.tableau.com/#/site/gitlab/views/DRAFTPDExperimentEventValidation/GrowthExperimentEventValidationDashboard). |
+| Production | Events flow into Snowflake correctly. | [GLEX Experiment Analysis Dashboard](https://10az.online.tableau.com/#/site/gitlab/views/USETHISFINALGLEX/GLEXExperimentAnalysisDashboard). |
+
+Event structure validation must happen during local development.
+By the time an experiment reaches staging, the event structure should already be verified.
+Staging and production validation focuses only on confirming events flow through the pipeline.
+
+Before deploying to staging, paste the raw Snowplow Micro output into the rollout issue
+as proof of correct event structure.
+For the expected format, see the
+[Experiment Rollout issue template](https://gitlab.com/gitlab-org/gitlab/-/blob/master/.gitlab/issue_templates/Experiment%20Rollout.md).
+
+## Turn off all experiments
+
+When there is a case on GitLab.com that necessitates turning off all experiments, we have this control.
+
+You can toggle experiments on GitLab.com using the `gitlab_experiment` [feature flag](/development/feature_flags/).
+
+This can be done via ChatOps:
+
+* [disable](/development/feature_flags/controls/#disabling-feature-flags): `/chatops gitlab run feature set gitlab_experiment false`
+* [enable](/development/feature_flags/controls/#process): `/chatops gitlab run feature delete gitlab_experiment`
+* This allows the `default_enabled` [value of true in the YAML](https://gitlab.com/gitlab-org/gitlab/-/blob/016430f6751b0c34abb24f74608c80a1a8268f20/config/feature_flags/ops/gitlab_experiment.yml#L8) to be honored.
+
+## Notes on feature flags
+
+We use the terms “enabled” and “disabled” here, even though it’s against our
+[documentation style guide recommendations](/development/documentation/styleguide/word_list/#enable)
+because these are the terms that the feature flag documentation uses.
+
+You may already be familiar with the concept of feature flags in GitLab, but using
+feature flags in experiments is a bit different. While in general terms, a feature flag
+is viewed as being either `on` or `off`, this isn’t accurate for experiments.
+
+Generally, `off` means that when we ask if a feature flag is enabled, it always
+returns `false`, and `on` means that it always returns `true`. An interim state,
+considered `conditional`, also exists. We take advantage of this trinary state of
+feature flags. To understand this `conditional` aspect: consider that either of these
+settings puts a feature flag into this state:
+
+* Setting a `percentage_of_actors` of any percent greater than 0%.
+* Enabling it for a single user or group.
+
+Conditional means that it returns `true` in some situations, but not all situations.
+
+When a feature flag is disabled (meaning the state is `off`), the experiment is
+considered *inactive*. You can visualize this in the [decision tree diagram](https://gitlab.com/gitlab-org/ruby/gems/gitlab-experiment#how-it-works)
+as reaching the first `Running?` node, and traversing the negative path.
+
+When a feature flag is rolled out to a `percentage_of_actors` or similar (meaning the
+state is `conditional`) the experiment is considered to be *running*
+where sometimes the control is assigned, and sometimes the candidate is assigned.
+We don’t refer to this as being enabled, because that’s a confusing and overloaded
+term here. In the experiment terms, our experiment is *running*, and the feature flag is
+`conditional`.
+
+When a feature flag is enabled (meaning the state is `on`), the candidate is always
+assigned.
+
+We should try to be consistent with our terms, and so for experiments, we have an
+*inactive* experiment until we set the feature flag to `conditional`. After which,
+our experiment is then considered *running*. If you choose to “enable” your feature flag,
+you should consider the experiment to be *resolved*, because everyone is assigned
+the candidate unless they’ve opted out of experimentation.

@@ -1,0 +1,25 @@
+Authentication and authorization
+
+/
+Authentication and authorization
+GitLab uses authentication and authorization to protect your resources without limiting collaboration.
+Authentication verifies who you are using methods such as passwords, two-factor authentication,
+SSH keys, access tokens, and external identity providers like SAML and OAuth. Authorization
+determines what you can do with roles and granular permissions to control access to groups,
+projects, and resources. Together, these systems create a security framework that scales from
+individual users to enterprise organizations.
+Understanding the GitLab security model helps you implement access controls that balance security
+requirements with operational efficiency.
+User identity
+Authentication methods such as LDAP, OmniAuth, SAML, SCIM, OIDC, and OAuth
+User authentication
+Passwords, two-factor authentication, SSH keys, access tokens, credentials inventory.
+User permissions
+User types, roles, permissions, membership, custom roles, and access controls.
+Authentication and authorization best practices
+Security recommendations and best practices for authentication, authorization, and access management.
+Authentication and authorization glossary
+Authentication, authorization, permissions, roles, and access control terminology.
+Was this page helpful?
+Yes
+No

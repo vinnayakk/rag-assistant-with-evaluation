@@ -1,0 +1,102 @@
+Google Chat
+
+/
+Google Chat
+Tier
+: Free, Premium, Ultimate
+Offering
+: GitLab.com, GitLab Self-Managed, GitLab Dedicated
+You can configure your project in GitLab to send notifications to a
+space of your choice in
+Google Chat
+.
+Threaded notifications are turned on by default
+in Google Chat for the same GitLab object (for example, an issue or merge request).
+For more information, see
+issue 438452
+.
+Configure the integration
+In Google Chat
+To configure the integration in Google Chat:
+Go to the space where you want to receive notifications from GitLab.
+In the upper left, next to the space name, select the down arrow (
+) >
+Apps & integrations
+.
+In the
+Webhooks
+section, select
+Add webhooks
+.
+On the
+Incoming webhooks
+dialog:
+In
+Name
+, enter a name for your webhook (for example,
+GitLab integration
+).
+Optional. In
+Avatar URL
+, enter an avatar for your bot.
+Select
+Save
+.
+Next to the webhook URL, select the vertical ellipsis (
+) >
+Copy link
+.
+For more information about webhooks, see the
+Google Chat documentation
+.
+In GitLab
+To configure the integration in GitLab:
+In the top bar, select
+Search or go to
+and find your project.
+In the left sidebar, select
+Settings
+>
+Integrations
+.
+Select
+Google Chat
+.
+Under
+Enable integration
+, select the
+Active
+checkbox.
+In
+Webhook
+,
+paste the URL you copied from Google Chat
+.
+In the
+Trigger
+section, select the checkbox for each GitLab event
+you want to receive notifications for in your Google Chat space.
+Optional. In the
+Notification settings
+section:
+Select the
+Notify only broken pipelines
+checkbox
+to receive notifications for failed pipelines only.
+Select the
+Notify only when status changes
+checkbox
+to receive notifications only when the pipeline status for the ref changes.
+From the
+Branches for which notifications are to be sent
+dropdown list,
+select the branches you want to receive notifications for.
+Optional. Select
+Test settings
+.
+Select
+Save changes
+.
+Was this page helpful?
+Yes
+No
