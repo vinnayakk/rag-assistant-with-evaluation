@@ -2,8 +2,8 @@ import pathlib, re
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
 
-SRC, DST = pathlib.Path("raw_html"), pathlib.Path("clean_text_v2")
-DST.mkdir(exist_ok=True)
+SRC, DST = pathlib.Path("outputs/raw_html"), pathlib.Path("outputs/clean_text_v2")
+DST.mkdir(parents=True, exist_ok=True)
 MIN_CHARS = 300
 
 for f in SRC.glob("*.html"):

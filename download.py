@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 
 ROOT = "https://docs.gitlab.com"
 SITEMAP = f"{ROOT}/en-us/sitemap.xml"           # English pages only
-OUT = pathlib.Path("raw_html"); OUT.mkdir(exist_ok=True)
+OUT = pathlib.Path("outputs/raw_html"); OUT.mkdir(parents=True, exist_ok=True)
 HEADERS = {"User-Agent": "learning-project (your-email@example.com)"}
 LIMIT = 150
 MAX_BLOCKS_IN_A_ROW = 5                          # stop if the site starts refusing us
