@@ -1,13 +1,6 @@
-"""Tests for api.py. They need NO API key, NO internet and NO model download.
-  - the HTTP layer is FastAPI's TestClient (it calls the app directly, no server needed)
-  - the language model is a fake local server (same trick as test_rag.py)
-  - the question embedding is a stored vector from your own database
-
-Run:   pip install httpx pytest      (TestClient needs httpx)
-       RAG_DB=outputs/chroma_db python test_api.py
-"""
 import json, os
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")            # so start-up builds a client (never used for real)
+os.environ["FAKE_RERANK"] = "1"                                    # word-overlap stand-in for the reranker model
 import numpy as np, anthropic
 try:
     import httpx2 as httpx_for_llm                                  # newer anthropic SDKs use httpx2
@@ -66,6 +59,18 @@ with TestClient(api.app) as http:                                      # `with` 
     assert len(r["retrieved"]) == 3 and all(x["text"] for x in r["retrieved"])
     assert calls[-1]["messages"][0]["content"].count("<source id=") == 3
     print("ok  k=3 retrieves 3 chunks and sends 3 to the model; debug=true returns chunk text")
+
+    # ---- the search mode is passed through, reported back, and checked
+    assert http.post("/ask", json={"question": "memory_bytes limit"}).json()["mode"] == "vector"   # the default
+    for m, field in [("vector", "distance"), ("bm25", "bm25"), ("hybrid", "rrf"), ("hybrid_rerank", "rerank_score")]:
+        j = http.post("/ask", json={"question": "memory_bytes limit", "mode": m}).json()
+        assert j["mode"] == m and len(j["retrieved"]) == 5, (m, j)
+        assert all(x[field] is not None for x in j["retrieved"]), (m, field)
+    j = http.post("/ask", json={"question": "memory_bytes limit", "mode": "bm25"}).json()
+    assert all(x["distance"] is None for x in j["retrieved"])                  # bm25 mode has no vector distance
+    assert http.post("/ask", json={"question": "memory_bytes limit", "mode": "nope"}).status_code == 422
+    assert http.get("/health").json()["default_mode"] == "vector"
+    print("ok  mode=vector/bm25/hybrid/hybrid_rerank is used and reported; unknown mode gives 422")
 
     # ---- the four kinds of reply
     for text, want in [(rag.NOT_FOUND, "refused"),

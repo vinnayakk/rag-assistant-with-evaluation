@@ -1,58 +1,44 @@
-"""Step 9: ask 10 questions through the running API and write down which ones fail.
-
-1. Start the server in one terminal:     uvicorn api:app
-2. In another terminal run:              python ten_questions.py
-   (options: --url http://127.0.0.1:8000/ask    --out outputs/ten_questions)
-
-Writes  <out>.md  (read this one, add your notes)  and  <out>.jsonl  (raw results, for later scoring).
-No extra packages needed (uses only the Python standard library).
-
-Each question has an expected KIND of reply, and (when it has one) the page that should be retrieved. The script
-checks four things automatically. It cannot check whether the answer is actually TRUE: that part is for you
-(compare the answer to the page, and tick the box in the .md file).
-"""
-import argparse, json, pathlib, urllib.error, urllib.request
-
-# kind: what a good reply looks like.  answered = a cited answer | refused = "I couldn't find this" | clarifying = a question back
-# page:  part of the URL of the page that holds the answer (None = no page should be needed)
-# words: every one of these must appear in the answer (case-insensitive)
+import argparse, json, pathlib, re, urllib.error, urllib.request
 QUESTIONS = [
     dict(id=1, q="How do I limit memory for Gitaly?", ok={"answered"},
-         page="/administration/gitaly/cgroups", words=["memory_bytes"],
+         page="/administration/gitaly/cgroups", words=["memory_bytes"], evidence=["memory_bytes"],
          tests="baseline: one clear question, one page, a named setting"),
     dict(id=2, q="How can I stop people from overwriting or deleting a container image tag once it has been pushed?",
-         ok={"answered"}, page="/immutable_container_tags", words=["immutable"],
+         ok={"answered"}, page="/immutable_container_tags", words=["immutable"], evidence=["To create an immutable rule"],
          tests="different words from the page ('overwrite' vs 'immutable'): does meaning-based search bridge them?"),
     dict(id=3, q="What fields does the payload of a push event webhook contain?", ok={"answered"},
-         page="/webhook_events", words=["commits"],
+         page="/webhook_events", words=["total_commits_count"], evidence=['"total_commits_count": 4'],   # the PUSH example; the tag example has ": 0"
          tests="one page has 102 chunks; the right one has to beat 100 look-alikes (tag events, merge request events...)"),
     dict(id=4, q="Which executors does GitLab Runner support?", ok={"answered"},
-         page="/runner/executors", words=["Kubernetes", "Docker"],
+         page="/runner/executors", words=["Kubernetes", "Docker"], evidence=["Docker Autoscaler"],
          tests="a list answer: does it name them all, or stop at the first ones?"),
     dict(id=5, q="What is the difference between the Docker executor and the Kubernetes executor?", ok={"answered"},
-         page="/runner/executors", words=["Pod"],
+         page="/runner/executors", words=["Pod"], evidence=["new Pod", "Docker installation"],
          tests="a comparison: needs two passages from the same page; only fair if both are retrieved"),
     dict(id=6, q="Which security issues were fixed in GitLab 16.11.1?", ok={"answered"},
-         page="patch-release-gitlab-16-11-1", words=["Path Traversal"],
+         page="patch-release-gitlab-16-11-1", words=["Path Traversal"], evidence=["Path Traversal", "ReDoS", "Bitbucket"],
          tests="near-duplicate pages: the other patch releases look the same, only the version number differs"),
     dict(id=7, q="Where in the admin UI do I switch on Gitaly cgroups?", ok={"answered", "refused"},
-         page="/administration/gitaly/cgroups", words=["gitlab.rb"],
+         page="/administration/gitaly/cgroups", words=["gitlab.rb"], evidence=["gitlab.rb"],
          tests="FALSE PREMISE: the page describes a config file, not a UI switch. A good reply corrects the question"),
     dict(id=8, q="What is the difference between a system hook and a webhook?", ok={"refused", "answered"},
-         page=None, words=[],
+         page=None, words=[], evidence=[],
          tests="CORPUS GAP: the system hooks page is not in the 147 pages. Good = says what is missing / answers only "
                "from what is there. Bad = confident invention"),
     dict(id=9, q="How do I reset my GitHub password?", ok={"refused"},
-         page=None, words=[],
+         page=None, words=[], evidence=[],
          tests="close to the topic but not in the docs: must refuse, not use outside knowledge"),
     dict(id=10, q="It doesn't work. What should I do?", ok={"clarifying"},
-         page=None, words=[],
+         page=None, words=[], evidence=[],
          tests="too vague: must ask what is meant, not guess"),
 ]
 
 
-def post(url, question):
-    req = urllib.request.Request(url, data=json.dumps({"question": question, "k": 5}).encode(),
+def post(url, question, mode=None):
+    body = {"question": question, "k": 5, "debug": True}        # debug: we need the chunk text for the evidence check
+    if mode:
+        body["mode"] = mode
+    req = urllib.request.Request(url, data=json.dumps(body).encode(),
                                  headers={"content-type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
@@ -63,6 +49,16 @@ def post(url, question):
         raise SystemExit(f"Cannot reach {url} ({e.reason}). Is `uvicorn api:app` running?")
 
 
+def scores(c):
+    """The scores a hit carries: dist (vector), bm25 (keywords), rrf (fused), rerank (cross-encoder)."""
+    parts = [(n, c.get(k)) for n, k in [("dist", "distance"), ("bm25", "bm25"), ("rrf", "rrf"), ("rerank", "rerank_score")]]
+    return " ".join(f"{n} {v:.3f}" for n, v in parts if v is not None)
+
+
+def norm(s):
+    return re.sub(r"\s+", " ", s).lower()
+
+
 def judge(q, r):
     """-> (list of problems, label for the kind of failure). Empty list = passed the automatic checks."""
     if "error" in r:
@@ -70,13 +66,19 @@ def judge(q, r):
     urls = [c["url"] for c in r["retrieved"]]
     cited = [c["url"] for c in r["citations"]]
     problems, kind = [], ""
-    if q["page"] and not any(q["page"] in u for u in urls):
+    if q["evidence"]:                                           # did SEARCH find the text that holds the answer?
+        have = norm(" ".join(c.get("text") or "" for c in r["retrieved"] if not q["page"] or q["page"] in c["url"]))
+        lost = [e for e in q["evidence"] if norm(e) not in have]
+        if lost:
+            problems.append(f"the retrieved chunks do not contain: {', '.join(lost)}")
+            kind = "RETRIEVAL: the text with the answer was not retrieved"
+    elif q["page"] and not any(q["page"] in u for u in urls):
         problems.append(f"the right page ({q['page']}) is NOT in the 5 retrieved chunks")
         kind = "RETRIEVAL: right page not retrieved"
     if r["status"] not in q["ok"]:
         problems.append(f"expected {' or '.join(sorted(q['ok']))}, got {r['status']}")
         if not kind:
-            kind = {"refused": "GENERATION: refused although the page was retrieved",
+            kind = {"refused": "GENERATION: refused although the retrieved chunks hold the answer",
                     "clarifying": "GENERATION: asked a question instead of answering",
                     "uncited": "GENERATION: answer without citations"}.get(
                         r["status"], "GATE: answered something that should have been refused or clarified")
@@ -97,13 +99,17 @@ def judge(q, r):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://127.0.0.1:8000/ask")
-    ap.add_argument("--out", default="outputs/ten_questions")
+    ap.add_argument("--mode", choices=["vector", "bm25", "hybrid", "hybrid_rerank"], default=None,
+                    help="how the server should search (default: the server's own default)")
+    ap.add_argument("--out", default=None, help="default: outputs/ten_questions_<mode>")
     a = ap.parse_args()
+    a.out = a.out or f"outputs/ten_questions_{a.mode or 'default'}"
+    print(f"search mode: {a.mode or 'server default'}")
 
     results = []
     for q in QUESTIONS:
         print(f"[{q['id']:>2}/{len(QUESTIONS)}] {q['q']}")
-        r = post(a.url, q["q"])
+        r = post(a.url, q["q"], a.mode)
         problems, kind = judge(q, r)
         results.append(dict(q=q, response=r, problems=problems, failure_kind=kind))
         print(f"       {'PASS' if not problems else 'FAIL'}  {r.get('status', 'error')}"
@@ -117,7 +123,7 @@ def main():
                                  "problems": x["problems"], "failure_kind": x["failure_kind"]}, ensure_ascii=False) + "\n")
 
     passed = sum(not x["problems"] for x in results)
-    md = [f"# 10-question test\n", f"Automatic checks passed: **{passed}/{len(results)}**. "
+    md = [f"# 10-question test (search mode: {a.mode or 'server default'})\n", f"Automatic checks passed: **{passed}/{len(results)}**. "
           "The checks cannot tell whether an answer is TRUE: read each answer next to its source page and fill in the "
           "last line of every question.\n",
           "| # | question | reply | auto | what went wrong |", "|---|---|---|---|---|"]
@@ -133,11 +139,11 @@ def main():
             md += [f"**Server error:** {r['error']}"]
         else:
             md += ["", "**Answer** (" + r["status"] + "):", "", "> " + r["answer"].replace("\n", "\n> "), "",
-                   "**Retrieved** (rank, cosine distance, page > section; * = cited in the answer):"]
+                   "**Retrieved** (rank, scores, page > section; * = cited in the answer):"]
             cited = {c["url"] + c["section"] for c in r["citations"]}
             for c in r["retrieved"]:
                 star = "*" if c["url"] + c["section"] in cited else " "
-                md.append(f"- {star}{c['rank']}. {c['distance']:.3f} | {c['title']} > {c['section']} | {c['url']}")
+                md.append(f"- {star}{c['rank']}. {scores(c)} | {c['title']} > {c['section']} | {c['url']}")
         md += ["", f"**Automatic checks:** {'all passed' if not x['problems'] else '; '.join(x['problems'])}",
                "", "**Your verdict:** [ ] true and complete  [ ] partly right  [ ] wrong  [ ] invented",
                "**Your notes (why did it fail? what would fix it?):** ", ""]

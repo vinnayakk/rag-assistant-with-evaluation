@@ -179,3 +179,60 @@ Weak passes:
 - Then test changes one at a time: retrieving more chunks (k=10 for Q3 and Q6 first), adding
   the neighbouring chunks of each hit, keyword matching for version numbers like 16.11.1
   (hybrid search), re-ranking, chunk size and overlap, and a different model.
+
+## Hybrid search and reranking (2026-10-06)
+
+- Added keyword search (BM25, own code in bm25.py), merged with vector search by
+  Reciprocal Rank Fusion (1/(60+rank)), and an optional reranker
+  (cross-encoder/ms-marco-MiniLM-L6-v2) that re-orders the top 30 candidates. rag.py has
+  four modes: vector, bm25, hybrid, hybrid_rerank. Vector is still the default.
+- ten_questions.py now has an "evidence" check: text that must be in the retrieved chunks
+  for any model to answer. compare_retrieval.py runs only the searches (no language model).
+
+Evidence found, 7 questions that have evidence:
+
+- top 5: vector 4, bm25 3, hybrid 5, hybrid+rerank 4.
+- top 10: vector 5, bm25 5, hybrid 6, hybrid+rerank 5.
+  Automatic checks on all 10 questions (top 5): vector 7, bm25 6, hybrid 8, hybrid+rerank 7.
+  One question on 10 is within noise (wording varies between runs; no temperature setting).
+
+What changed (my reading of the answers, to check against the pages):
+
+- Q6 security fixes in 16.11.1: vector refused; hybrid listed all 5 fixes. BM25 alone listed
+  4 and hybrid+rerank only 2, both worded as if complete.
+- Q3 push payload: hybrid added `commits` and `total_commits_count` (from the prose chunk)
+  but still not `repository` or `push_options`, and did not say it was partial. Vector
+  stopped at `project`. BM25 and hybrid+rerank refused. The reranker dropped the Push
+  events chunk that vector search had ranked first, in favour of three merge-request chunks.
+- Q5: BM25 alone misread the compatibility table ("Kubernetes does not support services";
+  the table says it does). No automatic check caught it.
+- Q1: the docs example says "# 20 GB" next to 32212254720 bytes (30 GiB). Hybrid answers
+  copied "20 GB"; BM25's answer silently wrote "30 GB" (right, but not in the source).
+- Q8: only hybrid+rerank gave a partial answer (system webhooks are documented elsewhere),
+  but it ended with "I couldn't find this", so the reply contradicts itself.
+- Q2, Q4, Q7, Q9, Q10: no real change. Q10's clarifying question still offers options
+  taken from irrelevant retrieved chunks.
+
+Findings:
+
+- Hybrid was best on this set; BM25 alone and the reranker did not help. BM25 finds version
+  numbers (Q6) but adds noise on a page with 100+ similar chunks (Q3: merge-request chunks
+  match "events", "payload", "fields"). Vector top 10 found the Q3 payload tail at rank 9;
+  hybrid top 10 did not.
+- The reranker (trained on web passages) pushed JSON, tables and release notes below prose
+  and promoted irrelevant chunks (Q4). Untested idea: bge-reranker-base.
+- Evidence checks for Q2 and Q3 are strict: Q2's creation steps are under "Prerequisites"
+  and the question did not need them.
+- Speed: search median 60 ms vector, 82 ms hybrid, 355 ms with reranker; the model call
+  takes about 2 s. compare_retrieval timings include model loading, so use timing_ms in the
+  .jsonl files instead.
+- Most dangerous failure, not yet checked: a partial list shown as a full list (Q3, Q6).
+
+Decision: use hybrid for further tests (RAG_RETRIEVAL=hybrid); reranker off for now.
+
+## Next step (replaces the earlier one)
+
+- Build the evaluation set: about 25 questions with evidence strings, plus unanswerable and
+  vague ones; measure the hit rate at top 3, 5 and 10 and score the answers.
+- Then try, one at a time: bge-reranker-base, adding neighbouring chunks, a prompt rule to
+  say when a list looks cut off, and hybrid with 8 to 10 chunks.

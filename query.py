@@ -1,9 +1,3 @@
-"""Step 4 (sanity check): ask the database a question and look at what comes back.
-
-Usage:  python query.py "How do I limit memory for Gitaly?"
-        python query.py "..." -k 8
-        python query.py          (runs a few built-in test questions)
-"""
 import argparse
 import chromadb
 from embedder import embed_query

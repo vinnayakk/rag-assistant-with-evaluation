@@ -1,8 +1,3 @@
-"""Step 3: embed every chunk and store it in a Chroma database on disk.
-
-Usage:  python embed_store.py outputs/chunks.jsonl outputs/chroma_db
-        python embed_store.py ... --reset        (delete the collection and start over)
-"""
 import argparse, json, pathlib, time
 import chromadb
 from embedder import embed_documents, MODEL_NAME
@@ -22,7 +17,7 @@ if a.reset:
 col = client.get_or_create_collection(
     name=a.collection,
     metadata={"hnsw:space": "cosine", "embedding_model": MODEL_NAME},   # how "closeness" is measured
-    embedding_function=None,                            # we compute vectors ourselves (see embedder.py)
+    embedding_function=None,                            # compute vectors
 )
 
 done = set(col.get(include=[])["ids"])                  # makes the script safe to re-run

@@ -1,20 +1,3 @@
-"""Step 1: split the cleaned Markdown pages into ~500-token chunks with overlap.
-
-Usage:
-    python chunk.py outputs/clean_text_v3 outputs/url_map.json outputs/chunks.jsonl
-    python chunk.py ... --target 450 --max 500 --overlap 50      (defaults shown)
-
-How it works
-  1. Each page is split at "##" headings (a section is the natural unit of meaning).
-  2. Inside a section, text is cut into blocks: paragraphs, lists, tables, code fences.
-     Blocks are never cut in the middle unless a single block is too big to fit.
-  3. Blocks are packed into a chunk until it reaches ~TARGET tokens (never above MAX).
-  4. The next chunk starts with the last ~OVERLAP tokens of the previous one.
-  5. Every chunk is stored with its page title, section, URL and token count.
-
-Token counting uses the SAME tokenizer as the embedding model (BAAI/bge-small-en-v1.5,
-max input 512 tokens), so "500 tokens" really means 500 tokens for that model.
-"""
 import argparse, json, os, pathlib, re, statistics
 
 # ----------------------------------------------------------------------------- tokens

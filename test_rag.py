@@ -1,11 +1,6 @@
-"""Tests for rag.py that need NO API key and NO model download.
-  - search() is tested with a real vector taken from your own database (a chunk used as its own query)
-  - answer() is tested through the real Anthropic SDK talking to a fake local server
-Run:  RAG_DB=outputs/chroma_db python test_rag.py
-"""
 import json, numpy as np, anthropic
 try:
-    import httpx2 as httpx          # newer anthropic SDKs use httpx2
+    import httpx2 as httpx          
 except ImportError:
     import httpx
 import rag

@@ -1,5 +1,3 @@
-"""Check chunks.jsonl before embedding. Run: python check_chunks.py outputs/chunks.jsonl outputs/clean_text_v3
-Checks: size limits, balanced code fences, overlap present, nothing lost, then prints 3 random chunks to READ."""
 import json, pathlib, random, re, sys
 sys.path.insert(0, ".")
 from chunk import load_counter, fix_code_labels

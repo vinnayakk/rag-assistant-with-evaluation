@@ -1,5 +1,3 @@
-"""Shared embedding helper. One place that decides WHICH model turns text into vectors,
-so the documents and the queries always use the same one."""
 import os, re, hashlib
 import numpy as np
 

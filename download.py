@@ -7,9 +7,9 @@ SITEMAP = f"{ROOT}/en-us/sitemap.xml"           # English pages only
 OUT = pathlib.Path("outputs/raw_html"); OUT.mkdir(parents=True, exist_ok=True)
 HEADERS = {"User-Agent": "learning-project (your-email@example.com)"}
 LIMIT = 150
-MAX_BLOCKS_IN_A_ROW = 5                          # stop if the site starts refusing us
+MAX_BLOCKS_IN_A_ROW = 5                          # stop if the site starts refusing
 
-# 1. Read the sitemap and print what we found at each step
+# 1. Read the sitemap and print what was found at each step
 xml = requests.get(SITEMAP, headers=HEADERS, timeout=30)
 xml.raise_for_status()
 urls = [l.text.strip() for l in BeautifulSoup(xml.text, "xml").find_all("loc")]
@@ -28,7 +28,7 @@ random.seed(42)
 urls = random.sample(urls, min(LIMIT, len(urls)))
 print(len(urls), "pages to fetch")
 
-# 3. Download politely, and stop if the server starts saying no
+# 3. Stop if the server starts saying no
 blocks = 0
 for i, u in enumerate(urls, 1):
     name = (re.sub(r"[^a-zA-Z0-9]+", "_", urlparse(u).path).strip("_") or "index")[:150] + ".html"

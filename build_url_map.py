@@ -1,8 +1,3 @@
-"""Step 0: map each cleaned file back to its real page URL (for citations).
-Reads the canonical URL stored inside every raw HTML page. No network needed.
-
-Usage: python build_url_map.py outputs/raw_html outputs/url_map.json
-"""
 import json, pathlib, sys
 from bs4 import BeautifulSoup
 
