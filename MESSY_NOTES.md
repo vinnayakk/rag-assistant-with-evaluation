@@ -42,7 +42,9 @@
   a neighbour, and added a title fallback built from the URL for pages with an empty title.
 - Excluded the page runner/agents: it has an empty title and its content is writing-style
   instructions for AI tools, not product documentation (9 chunks). It was also retrieved as
-  noise for vague queries (3 of the top 5 results for "how do I fix it").
+  noise for vague queries (3 of the top 5 results for "how do I fix it"). No script does
+  this: it was one shell command, run before chunking:
+  `mkdir -p outputs/excluded && mv outputs/clean_text_v3/runner_agents.md outputs/excluded/`
 
 ## Problems found while chunking
 
@@ -162,13 +164,17 @@ Weak passes:
 ## Decisions
 
 - Kept: English docs, current version only, pages over 300 chars.
-- Dropped: review apps, versioned paths, 2 stub pages, the runner/agents page.
+- Dropped: review apps, versioned paths, 2 stub pages, the runner/agents page (moved to
+  outputs/excluded/ with a shell command, not by a script).
 - Keep page title and absolute URL with each chunk, for citations.
 - Local embedding model and Chroma for storage; Claude Haiku (claude-haiku-4-5-20251001) for
   answers by default, switchable with the RAG_MODEL setting.
-- Licence: not sure the GitLab content can be republished, so the whole outputs/ folder
-  (raw HTML, cleaned text, chunks, database, test results) is in .gitignore. Only the scripts
-  are published. Anyone can rebuild the data with download.py.
+- Licence: GitLab documentation is published under CC BY-SA 4.0 (checked 2026-10-06). The
+  whole outputs/ folder (raw HTML, cleaned text, chunks, database, test results) stays in
+  .gitignore anyway: it is rebuilt with download.py, so the repo holds only my code and notes.
+  If I ever publish the cleaned text, chunks or test results, they are adaptations of GitLab's
+  text, so they need attribution to GitLab and the same CC BY-SA 4.0 licence, separate from
+  the MIT licence on the code.
 
 ## Next step
 
@@ -196,22 +202,29 @@ Evidence found, 7 questions that have evidence:
   Automatic checks on all 10 questions (top 5): vector 7, bm25 6, hybrid 8, hybrid+rerank 7.
   One question on 10 is within noise (wording varies between runs; no temperature setting).
 
-What changed (my reading of the answers, to check against the pages):
+What changed (each claim checked against the cleaned pages):
 
-- Q6 security fixes in 16.11.1: vector refused; hybrid listed all 5 fixes. BM25 alone listed
-  4 and hybrid+rerank only 2, both worded as if complete.
-- Q3 push payload: hybrid added `commits` and `total_commits_count` (from the prose chunk)
-  but still not `repository` or `push_options`, and did not say it was partial. Vector
-  stopped at `project`. BM25 and hybrid+rerank refused. The reranker dropped the Push
-  events chunk that vector search had ranked first, in favour of three merge-request chunks.
+- Q6 security fixes in 16.11.1: the page lists 5 fixes. Vector refused; hybrid listed all 5.
+  BM25 alone listed 4 and left out Path Traversal, the most severe one (CVSS 8.5).
+  Hybrid+rerank listed only the two medium issues and left out all three High ones. Both
+  partial answers were worded as if complete.
+- Q3 push payload: the example on the page has 19 top-level fields. Vector listed 15 and
+  stopped at `project`; hybrid listed 17 (it added `commits` and `total_commits_count` from
+  the prose chunk) but not `push_options` or `repository`. Neither said the list was partial.
+  BM25 and hybrid+rerank refused. The reranker dropped the Push events chunk that vector
+  search had ranked first, in favour of three merge-request chunks.
 - Q5: BM25 alone misread the compatibility table ("Kubernetes does not support services";
   the table says it does). No automatic check caught it.
-- Q1: the docs example says "# 20 GB" next to 32212254720 bytes (30 GiB). Hybrid answers
-  copied "20 GB"; BM25's answer silently wrote "30 GB" (right, but not in the source).
-- Q8: only hybrid+rerank gave a partial answer (system webhooks are documented elsewhere),
-  but it ended with "I couldn't find this", so the reply contradicts itself.
-- Q2, Q4, Q7, Q9, Q10: no real change. Q10's clarifying question still offers options
-  taken from irrelevant retrieved chunks.
+- Q1: the docs example says "# 20 GB" next to 32212254720 bytes, which is 30 GiB. Hybrid
+  answers copied "20 GB" faithfully; BM25's answer silently wrote "30 GB" (right, but not what
+  the page says, and it did not mention the page is wrong).
+- Q8: only hybrid+rerank gave a partial answer, and it was faithful: the page says system
+  webhooks are documented at /administration/system_hooks/. But it ended with "I couldn't
+  find this", so the reply contradicts itself, and it is labelled "answered".
+- Q2: the creation steps are in the "Prerequisites" chunk and are identical to the delete
+  steps, which is why the strict evidence check fails in most modes.
+- Q4, Q7, Q9, Q10: no real change. Q10's clarifying question still offers options taken from
+  irrelevant retrieved chunks.
 
 Findings:
 
@@ -219,16 +232,41 @@ Findings:
   numbers (Q6) but adds noise on a page with 100+ similar chunks (Q3: merge-request chunks
   match "events", "payload", "fields"). Vector top 10 found the Q3 payload tail at rank 9;
   hybrid top 10 did not.
-- The reranker (trained on web passages) pushed JSON, tables and release notes below prose
-  and promoted irrelevant chunks (Q4). Untested idea: bge-reranker-base.
+- The reranker moved the Q3 payload chunk below three merge-request chunks and put two
+  Windows-executor developer pages above the executor list (Q4). My guess is that a model
+  trained on web passages scores JSON, tables and release notes poorly; this is untested, as
+  is bge-reranker-base.
 - Evidence checks for Q2 and Q3 are strict: Q2's creation steps are under "Prerequisites"
   and the question did not need them.
 - Speed: search median 60 ms vector, 82 ms hybrid, 355 ms with reranker; the model call
   takes about 2 s. compare_retrieval timings include model loading, so use timing_ms in the
   .jsonl files instead.
-- Most dangerous failure, not yet checked: a partial list shown as a full list (Q3, Q6).
+- Most dangerous failure, and no check detects it yet: a partial list shown as a full list
+  (Q3, Q6).
 
 Decision: use hybrid for further tests (RAG_RETRIEVAL=hybrid); reranker off for now.
+
+## Repo review before publishing (2026-10-06)
+
+Problems found:
+
+- My draft README said the API key could go in .env, but no code loads .env. The key must be exported
+  (`export ANTHROPIC_API_KEY=...`). The .env line in .gitignore is still useful as a safety net.
+- .DS_Store (macOS) was committed and not ignored. Added to .gitignore and removed from git.
+- download.py sends a placeholder contact (your-email@example.com) in its User-Agent. Not
+  changed: it only matters when download.py runs again, and it does not break anything.
+  Worth replacing with a real contact before re-running. The 150 pages in this project were
+  fetched with the placeholder.
+- requirements.txt (pip freeze) held 4 packages nothing uses: gh (an unrelated package, not
+  GitHub's CLI), GitPython, gitdb and smmap. Removed. Everything else is a dependency of what
+  the code imports.
+- compare_retrieval.py times the first search of each mode, which includes loading the models,
+  so its "avg search time" row is too high. Not changed: it does not affect the evidence
+  results. The search times in the README come from timing_ms in the ten_questions .jsonl
+  files. A warm-up search per mode before the loop would fix it.
+- The pipeline needs one extra command (moving runner_agents.md), now written in the README.
+- Re-running download.py can give a different 150 pages, because the sitemap changes over
+  time. The numbers in the README come from the 2026-10-05 download.
 
 ## Next step (replaces the earlier one)
 

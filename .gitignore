@@ -2,6 +2,8 @@
 outputs/
 .env
 
+# macOS
+.DS_Store
 
 # Python compiled files & cache
 __pycache__/
