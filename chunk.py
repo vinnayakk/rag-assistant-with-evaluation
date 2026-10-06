@@ -229,6 +229,9 @@ def main():
     rows = []
     for f in files:
         title, tier, pieces = chunk_page(f.read_text(encoding="utf-8"), a.target, a.max, a.overlap, a.min, count)
+        if not title.strip():                                # a page with an empty <h1>: build a title from its URL
+            path = urls.get(f.stem, "").split("//", 1)[-1].split("/", 1)[-1].strip("/")
+            title = path.replace("/", " / ").replace("_", " ").replace("-", " ") or f.stem
         for i, (section, body) in enumerate(pieces):
             text = f"{title} > {section}\n\n{body}"          # this is what gets embedded
             rows.append({
