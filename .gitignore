@@ -1,8 +1,9 @@
 .venv-rag/
 outputs/
-SOURCE.md
-MESSY_NOTES.md
+.env
+
 
 # Python compiled files & cache
 __pycache__/
 *.py[cod]
+.pytest_cache/
