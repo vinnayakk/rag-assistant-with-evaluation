@@ -1,28 +1,3 @@
-"""Step 14: answer the question set with two search modes, check every answer with the faithfulness judge, compare.
-
-    python eval_answers.py --limit 3 --modes vector      # a cheap trial first (3 questions, a few cents)
-    python eval_answers.py                               # vector and hybrid_rerank on all questions
-    python eval_answers.py --modes hybrid                # any modes you like, one set of files per mode
-    python eval_answers.py --rejudge --modes vector      # judge the SAVED answers again (after changing judge.py)
-    python eval_answers.py --compare                     # rebuild the side-by-side table from the saved files
-
-This one DOES call the language model: once to write each answer (rag.LLM_MODEL) and once to judge it (judge.JUDGE_MODEL).
-It needs ANTHROPIC_API_KEY. eval_recall.py is the search-only test; this is the answer test.
-Before the real run it makes three tiny test calls (the "preflight"): a wrong key, a wrong model name or a request the API
-rejects stops it there, before any real money is spent. It also checks the judge on one true and one false statement.
-
-What it measures per mode, for every question in eval_questions.jsonl:
-    right kind of reply    answered / refused / asked back, as the question's "expected" says
-    chunks held the answer the evidence strings are in the 5 chunks the model was given (same test as eval_recall)
-    faithful               the judge found every claim of the answer backed by those 5 chunks (see judge.py)
-Faithful is about the answer against its chunks. It does not say the answer is right: the chunks can be the wrong ones.
-
-Files are named after the mode, like eval_recall.py, so one run never replaces another mode's results:
-    outputs/eval_answers_<mode>.jsonl      everything: answer, the 5 chunks, the judge's claims. What --rejudge and --compare read
-    outputs/eval_answers_<mode>.md         the same, readable: one block per question, with the judge's claims and a line for YOUR verdict
-    outputs/eval_answers_<mode1>+<mode2>.md   the results table
-A run with --limit or --ids writes to outputs/eval_answers_trial_... instead, so a trial never replaces a full run.
-"""
 import argparse, json, os, pathlib, statistics, time
 
 import anthropic

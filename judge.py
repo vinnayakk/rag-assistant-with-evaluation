@@ -1,21 +1,3 @@
-"""Faithfulness judge: is every claim in an answer backed by the chunks the model was given?
-
-    python judge.py "question" "answer text"      # judges that answer against what search finds for the question
-
-Faithfulness is NOT correctness. It asks one thing: could the answer have been written from these chunks alone?
-An answer can be faithful and still wrong (the chunks were the wrong ones) or incomplete (the chunks left something out).
-
-How it works, in the order it happens:
- 1. A language model (the judge) splits the answer into single claims.
- 2. For each claim it names the source that backs it and COPIES the words from that source that say it.
- 3. This file then checks that those copied words really are in that source. A judge that invents a quote to
-    back a claim is caught here, and the claim is counted as unsupported.
- 4. Score = supported claims / all claims. The answer is "faithful" only if every claim is supported.
-The judge is a different model from the one that wrote the answers (see JUDGE_MODEL): a model tends to go easy on its own
-writing, and two models rarely share the same blind spots.
-Tutorials: https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/faithfulness/   (the idea)
-           https://platform.claude.com/docs/en/build-with-claude/structured-outputs          (how the judge's JSON is forced)
-"""
 import json, os, re, unicodedata
 
 import rag

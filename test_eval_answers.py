@@ -1,13 +1,8 @@
-"""Offline tests for eval_answers.py: no API key, no network, no cost. Search runs for real on your database; the answering
-model and the judge are a fake HTTP server (a real anthropic client pointed at it), so what is sent and how the reply is read are tested.
-Run:   RAG_DB=outputs/chroma_db python test_eval_answers.py
-What this CANNOT test: whether the real models answer or judge well. The trial run (--limit 3) and your own reading do that.
-"""
 import argparse, hashlib, json, os, pathlib, re, sys, tempfile
 os.environ["FAKE_RERANK"] = "1"                                    # word-overlap stand-in for the reranker model
 import numpy as np, anthropic
 try:
-    import httpx2 as httpx_for_llm                                  # newer anthropic SDKs use httpx2
+    import httpx2 as httpx_for_llm                                  
 except ImportError:
     import httpx as httpx_for_llm
 

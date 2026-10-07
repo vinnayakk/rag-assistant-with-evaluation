@@ -349,10 +349,10 @@ Findings:
 
 Mistakes in my own tooling:
 
-- The first eval*recall.py wrote every mode to the same file names, so running the modes one
+- The first `eval_recall.py` wrote every mode to the same file names, so running the modes one
   at a time replaced the previous mode's results (I renamed the files by hand). Now each mode
-  has its own files, outputs/eval_recall*<mode>.md and .jsonl, and the side-by-side report is
-  outputs/eval_recall_vector+bm25+hybrid+hybrid_rerank.md, built with `--compare` from the
+  has its own files, `outputs/eval_recall_<mode>.md` and `.jsonl`, and the side-by-side report is
+  `outputs/eval_recall_vector+bm25+hybrid+hybrid_rerank.md`, built with `--compare` from the
   saved .jsonl files without searching again. The file name is made from the modes in it, so
   one run cannot replace another's file.
 
@@ -369,12 +369,163 @@ Decision: no change. Hybrid stays the choice and the reranker stays off. This ag
 10-question test (hybrid best, reranker not helping), but the differences are one to three
 questions out of 43.
 
-## Next step after the evaluation (replaces the earlier ones)
+## Answer evaluation and faithfulness judge (2026-10-07)
 
-- Test the answers, not only the search: send all 51 questions through the API with hybrid,
-  like ten_questions.py, and check the reply type (answered, refused or clarifying) and the
-  answer against the page. This is the only way to score the 8 questions without a page.
-- Decide whether to fix Q33's evidence string and re-run the four modes.
+Q numbers in this section are the evaluation set's (Q1 to Q51) again.
+
+What I built:
+
+- `eval_answers.py`: for each of the 51 questions it searches (5 chunks), lets Claude Haiku
+  4.5 write the answer with the same code as the API (`rag.answer`; the reply labels come
+  from `api.status_of`), and records the reply type, whether the 5 chunks held the right
+  page and the evidence string, and a faithfulness verdict. Each mode has its own files,
+  `outputs/eval_answers_<mode>.jsonl` and `.md`; the side-by-side table is
+  `outputs/eval_answers_vector+hybrid_rerank.md`, rebuilt with `--compare`.
+- `judge.py`: the faithfulness judge. Faithful means every claim in the answer is backed by
+  the 5 chunks the model was given. It does not mean correct: the chunks can be the wrong
+  ones, and an answer can be faithful and incomplete. The judge is Claude Sonnet 5.5, not
+  the model that wrote the answers (a model goes easy on its own writing). It splits the
+  answer into claims, names the source of each and copies the words that back it; the code
+  then checks that those words are really in that source, and a claim with an invented
+  quote counts as unsupported. An answer is faithful only if all its claims are supported.
+- Checks on the judge itself: a preflight before the real run (a true statement must come
+  out faithful and a false one unfaithful); 5 control answers per mode, judged against the
+  chunks of a different question, which must come out unfaithful; and a count of invented
+  quotes. Result: 5 of 5 controls unfaithful in both modes, 0 invented quotes in about 300
+  claims, 0 judge errors.
+- `test_judge.py` and `test_eval_answers.py` run offline with a fake model server (no key).
+  They cannot show whether the judge reads real answers well; so far the only check of
+  that is my reading of the 5 flagged answers below.
+
+Results (51 questions, top 5, run on my MacBook). Only vector and `hybrid_rerank` were run,
+not hybrid on its own:
+
+| measure                                      | vector                | hybrid_rerank          |
+| -------------------------------------------- | --------------------- | ---------------------- |
+| right kind of reply, all 51                  | 46/51 (90%)           | 47/51 (92%)            |
+| answered, of the 43 the docs can answer      | 40/43                 | 41/43                  |
+| refused or asked back, of the 7 that must be | 5/7                   | 5/7                    |
+| 5 chunks held the right page (43)            | 43/43                 | 42/43                  |
+| 5 chunks held the evidence (43)              | 41/43                 | 41/43                  |
+| faithful answers                             | 37/40 (92%)           | 39/41 (95%)            |
+| claims backed by the chunks                  | 149/152 (98%)         | 146/148 (99%)          |
+| answers with a contradicted claim            | 1                     | 1                      |
+| median search / answer / judge               | 90 / 1,440 / 3,138 ms | 361 / 1,414 / 2,995 ms |
+| cost: answering / judging (with 5 controls)  | $0.12 / $0.48         | $0.13 / $0.47          |
+
+The 95% intervals are 79 to 96% and 81 to 97% for the reply type, 80 to 97% and 84 to 99%
+for faithful answers. They overlap almost entirely. The whole run cost about $1.20.
+Answering took about 2,000 input tokens and 78 to 79 output tokens per question, over all
+51 (88 or 89 over the answers that make claims; refusals are short). The README's "120 to
+160 output tokens" came from the 10-question test. I have not worked out why the two differ.
+
+Findings:
+
+- The two modes cannot be told apart on these questions. Reply type differs by one
+  question: `hybrid_rerank` gained Q25 and lost none. Faithful answers differ by two, with
+  one more answer judged on one side (see the limits). A difference of this size is within
+  what the judge's own noise and one rerun could change.
+- Q25 (the CVE fixed in 17.0.1) is the one clear search effect and it matches the recall
+  test: vector had the CVE chunk at rank 6, so the model saw "1-click account takeover" but
+  no CVE number and refused. `hybrid_rerank` had it in the 5 chunks and answered CVE-2024-4835.
+- The wrong replies are mostly not search failures:
+  - Q42 (merge request title validation on the Free tier) and Q43 (Windows Server 2019
+    hosted runners) are false-premise questions where the right reply is an answer that
+    corrects the premise. All four replies (2 questions, 2 modes) were labelled "refused".
+    In three of them the fixed refusal sentence was followed by the right correction (Q42
+    in both modes: "Premium, Ultimate"; Q43 in vector: only Windows 2022 is listed). The
+    fourth, `hybrid_rerank` on Q43, had not retrieved the page and could only say that
+    the docs do not cover it. The first three are the same pattern as Q7 in the 10-question
+    test: the content is right and the label is wrong. The cause is mostly the prompt: its
+    rule 3 says to refuse with only the fixed sentence when the sources do not contain
+    the answer, and no rule covers a question whose premise the sources correct.
+  - Q51 (my question about important Linux package settings): both modes refused and
+    explained why, instead of asking a clarifying question. Q49 and Q50 got the clarifying
+    question in both.
+  - Q48 (a haiku, off-topic): the model did not use the fixed sentence in either mode. Vector
+    apologised without citing (labelled "uncited"); `hybrid_rerank` offered help (labelled
+    "clarifying"). The same non-compliance with "reply with only this sentence" as before.
+- Faithfulness is high in both modes: 37 of 40 and 39 of 41 answers, with 98 to 99% of the
+  claims backed. The 5 answers the judge flagged, and what I think of each after reading
+  the claim and the sources:
+  - vector Q7 (fail fast testing): contradicted, and the judge is right. The answer says
+    fail fast runs only the 100 specs for the changed file "rather than running the entire
+    test suite". The page's table shows that the `rspec-complete` job still runs all 1000
+    specs when the fail fast specs pass.
+  - `hybrid_rerank` Q11 (CRIME): the claim is "CRIME requires both a vulnerable protocol
+    configuration and data compression". The page says you might be vulnerable if you use
+    SSL compression or SPDY, and its Nessus section says "one of two configurations ... known
+    to be required". Not stated by the page, so the flag is real. "Contradicted" is the
+    judge's strongest label; "unsupported" would also have been fair.
+  - vector Q11: unsupported, borderline. The answer says Gzip is disabled in the NGINX files
+    for both installation types. The page says GitLab mitigates CRIME "by deactivating Gzip
+    when HTTPS is enabled" and then links the two NGINX files as "the sources of the files".
+    A fair reading, but it does not say that Gzip is disabled in those files.
+  - `hybrid_rerank` Q39 (pull policy): unsupported, borderline. The answer says the runner
+    does not pull an image that is already stored locally under `if-not-present`. The chunk
+    only recommends that policy "to avoid transferring data" for large images that rarely
+    change; the mechanism is implied by its name, not stated.
+  - vector Q19 (change failure rate): unsupported, but too strict. The page says the rate is
+    measured "as the percentage of deployments that cause an incident" and gives an example
+    whose rate is 0.3, so "0.3 is 30%" is a unit conversion. I would not call it a
+    faithfulness failure. The judge passed the other 5 claims of this answer.
+    So of the 5 flags, 2 are real, 2 are borderline and 1 is too strict. I checked only these
+    5 against the sources, not the answers the judge passed, so I cannot say how many problems
+    it missed.
+- Q33 (which way of building images keeps runners unprivileged) is an evidence miss in every
+  mode in the recall test. Both modes answered it correctly and faithfully ("BuildKit
+  rootless keeps your runners unprivileged ... a direct replacement for Kaniko builds"), and
+  the judge passed both. So the evidence string is the problem, not the search: recall is
+  understated by one question in every mode. Both answers came mostly from the chunk labelled
+  "Prerequisites" (rank 2 in vector, rank 1 in `hybrid_rerank`). It also holds the short
+  "BuildKit rootless" section, because tiny sections are merged into a neighbour, so the
+  citation label shows only the first heading.
+- Search time is higher here than in the recall run: median 90 ms (vector) and 361 ms
+  (`hybrid_rerank`), against 12 and 270 ms. Both runs did a warm-up search first, so model
+  loading is not the reason. 361 ms agrees with the 355 ms from the 10-question test. My
+  guess, untested: in the recall run the searches follow each other immediately, here each
+  one comes right after a multi-second wait for the network. I have not checked it.
+
+Mistakes and limits:
+
+- Faithfulness is counted only over the answers actually given. A mode that refuses more
+  has fewer answers to get wrong and looks more faithful. Here vector gave 41 answers
+  (judged 40: Q48 had no claims) and `hybrid_rerank` gave 41 (judged 41), so the denominators
+  are almost equal, but the table still cannot be read as "which mode is more faithful"
+  without them.
+- The judge is a language model and the SDK has no temperature setting, so a re-run can
+  flip a borderline answer (Q11, Q39) in either direction. I ran each answer once.
+- Hybrid on its own, the mode I chose in the notes above, was not part of this run. This
+  compared vector with `hybrid_rerank`, so it says nothing yet about the decision to keep
+  hybrid and the reranker off. One more mode costs about $0.60.
+- 8 of the 51 questions have no page, and the reply type is the only check on them: 7 must
+  be refused or asked back, and Q46 (a corpus gap) may also be answered. Whether the answers
+  are right is not checked beyond the judge, and faithfulness does not catch a wrong answer
+  built from the wrong chunks. The "my verdict" line in the `.md` files is for my own
+  reading of each answer; the numbers above do not use it.
+- Questions written with the pages open, and only 51 of them: the same limit as the recall
+  test.
+
+Decision: no change. The two modes cannot be separated on 51 questions, and the clearest
+fixes are in the prompt (false premise, the fixed refusal sentence, broad questions that
+are about a topic), not in search. I will not tune the judge's prompt to make the numbers
+look better. If I add a rule (for example that arithmetic on stated numbers counts as
+supported, which would clear Q19), I write it down first, re-judge all the compared modes
+with the new prompt under a new `--out` prefix, and record it here.
+
+## Next step after the answer evaluation (replaces the earlier ones)
+
+- Run `python eval_answers.py --modes hybrid` so the mode I actually use has answer results
+  too, then `--compare` to put the three modes side by side. About $0.60.
+- Read the answers myself and fill in the "my verdict" lines, starting with a sample of the
+  answers the judge passed (so far only the 5 flagged ones were checked), to see whether
+  the judge misses problems.
+- Prompt changes, one at a time, each re-run on all 51 questions: tell the model what to do
+  with a false premise (answer with the correction and do not start with the refusal
+  sentence), how to treat a question that is about a topic but too broad (clarifying
+  question, Q51), and what to do with off-topic requests (Q48).
+- Decide whether to fix Q33's evidence string ("without privileged containers") and re-run
+  the recall test for the four modes.
 - Add harder questions: written without the page open, or taken from real users, with more
   version and CVE questions and more pages that have many similar chunks (like the labels API).
 - Then try, one at a time: bge-reranker-base, adding neighbouring chunks, a prompt rule to

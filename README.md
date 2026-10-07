@@ -53,10 +53,18 @@ FastAPI: POST /ask
 5. `api.py` (FastAPI) exposes this as `POST /ask`. The reply says what kind of
    answer it is (`answered`, `refused`, `clarifying`, `uncited`) and includes every
    retrieved chunk with its scores, so a bad answer can be traced to its cause.
-6. `ten_questions.py` and `compare_retrieval.py` are the test harness. `query.py` is a
-   quick vector-search-only command for looking at what the database returns.
+6. `ten_questions.py` and `compare_retrieval.py` are the first test harness (10 questions).
+   `eval_questions.jsonl` holds 51 questions; `eval_recall.py` scores search on them (no
+   model, no cost) and `eval_answers.py` runs the whole pipeline and checks every answer
+   with a faithfulness judge (`judge.py`). `query.py` is a quick vector-search-only
+   command for looking at what the database returns.
 
 ## Evaluation
+
+Two rounds: 10 questions through the whole pipeline, then 51 questions that score search
+and answers separately.
+
+### Round 1: 10 questions
 
 **Method:** 10 questions written from pages that are actually in the corpus: a
 single fact, a paraphrase, a deep page, a list, a comparison, near-duplicate pages,
@@ -95,22 +103,90 @@ source pages showed more than the scores do:
   Untested guess: this web-passage-trained model scores JSON, tables and release
   notes poorly.
 
+### Round 2: 51 questions
+
+**Method:** `eval_questions.jsonl` has 51 questions. 43 have a right page and an
+"evidence" string that must appear in one retrieved chunk of that page. 8 have no page
+(3 corpus gaps, 2 off-topic, 3 vague or too broad). I wrote them with the pages open, so
+they share words with the pages and are easier than real users' questions. Q numbers
+below are the numbers in that file. Two separate tests:
+
+1. **Search** (`eval_recall.py`, no model, no cost): is the chunk that holds the answer in
+   the top k results?
+2. **Answers** (`eval_answers.py`): run the whole pipeline, compare the kind of reply
+   (answered, refused, asked back) with the expected one, and ask a judge model whether
+   every claim in the answer is backed by the 5 chunks the model was given. This is
+   **faithfulness**, not correctness: an answer built from the wrong chunks can be
+   faithful and wrong. The judge (Claude Sonnet 5.5, not the model that writes the
+   answers) lists the claims and copies the words that back each one, and the code checks
+   that those words are really in the chunk. As a check on the judge, answers judged
+   against another question's chunks must come out unfaithful: 5 of 5 did, in both modes.
+
+**Search** (43 scored questions):
+
+| Search mode       | Right page, top 5 | Evidence, rank 1 | Evidence, top 5 | Evidence, top 10 |
+| ----------------- | ----------------- | ---------------- | --------------- | ---------------- |
+| vector            | 43/43             | 30/43            | 41/43           | 42/43            |
+| bm25              | 42/43             | 31/43            | 39/43           | 42/43            |
+| **hybrid**        | 43/43             | 34/43            | **42/43**       | **43/43**        |
+| hybrid + reranker | 42/43             | **35/43**        | 41/43           | 41/43            |
+
+**Answers** (all 51 questions, 5 chunks each; plain hybrid was not run):
+
+| Measure                                      | vector      | hybrid + reranker |
+| -------------------------------------------- | ----------- | ----------------- |
+| Right kind of reply                          | 46/51 (90%) | 47/51 (92%)       |
+| Answered, of the 43 the docs can answer      | 40/43       | 41/43             |
+| Refused or asked back, of the 7 that must be | 5/7         | 5/7               |
+| Faithful answers                             | 37/40 (92%) | 39/41 (95%)       |
+| Claims backed by the chunks                  | 149/152     | 146/148           |
+
+- The modes are hard to tell apart. Page recall is 98 to 100% for all four. Hybrid is
+  best at evidence top 5 and top 10, and the reranker at rank 1, but the gaps are one to
+  three questions. The two answer rows differ by one or two questions, and the 95%
+  intervals overlap (reply type 79 to 96% and 81 to 97%).
+- Q25 (which CVE was fixed in 17.0.1) is the one clear search effect. In vector search the
+  chunk with the CVE was at rank 6, so the model saw the issue but no CVE number and
+  refused. Hybrid + reranker had it in the top 5 and answered correctly.
+- Most wrong replies are not search failures. Two false-premise questions (Q42, Q43) were
+  labelled "refused" in both modes. In three of those four replies the fixed refusal
+  sentence was followed by the right correction (for example that the feature is Premium
+  and Ultimate only); the fourth had not retrieved the page. The prompt has no rule for a
+  question whose premise the docs correct. A broad question (Q51) was refused instead of
+  getting a clarifying question, and an off-topic request (Q48) did not get the fixed
+  sentence in either mode.
+- The judge flagged 5 answers. Reading them against the chunks: 2 are real errors (a fail
+  fast testing answer said only 100 specs run when the page shows the complete job still
+  runs all 1000; a CRIME answer said two conditions are needed when the page says one of
+  two), 2 are borderline inferences and 1 is too strict ("0.3 is 30%"). I only read those
+  5, not the answers it passed.
+- Faithfulness is counted over the answers actually given, so a mode that refuses more
+  has fewer chances to be wrong. Here both modes gave 41 answers.
+- The whole run cost about $1.20 (about $0.60 per mode, 80% of it for the judge).
+
 ## Results
 
 - 147 pages and 1,461 chunks (median 333 tokens, max 497; model limit 512).
 - The failing question (security fixes in 16.11.1) is fixed by hybrid search.
 - Hybrid was the best mode on this set; BM25 alone and the reranker did not help.
+- On 51 questions, vector and hybrid + reranker gave 46 and 47 right kinds of reply and
+  37 of 40 and 39 of 41 faithful answers: no difference I can show (see Round 2).
 - Search takes a median of 60 ms (vector), 82 ms (hybrid) and 355 ms (with the
-  reranker). The model call takes about 2 s, so the reranker adds about 15%.
-- About 2,000 input and 120 to 160 output tokens per question.
-- Offline tests (`test_rag.py`, `test_api.py`, `test_hybrid.py`) need no API key
-  and no network. They use a fake model server and a stored vector as the query.
+  reranker) in the 10-question test, and 90 ms (vector) and 361 ms (with the reranker) in
+  the 51-question answer test. The model call takes 1.4 to 2 s, so the reranker adds 15 to
+  25% to the wait. A search-only run, with nothing in between, was faster (12 ms and
+  270 ms); I have not found out why.
+- About 2,000 input tokens per question. Output was 120 to 160 tokens in the 10-question
+  test and 78 on average over the 51 (refusals are short).
+- Offline tests (`test_rag.py`, `test_api.py`, `test_hybrid.py`, `test_eval_recall.py`,
+  `test_judge.py`, `test_eval_answers.py`) need no API key and no network. They use a fake
+  model server and a stored vector as the query.
 
 ## Stack
 
 Python · Chroma · sentence-transformers (`BAAI/bge-small-en-v1.5`,
-`cross-encoder/ms-marco-MiniLM-L6-v2`) · own BM25 · Anthropic Claude Haiku 4.5 ·
-FastAPI · BeautifulSoup + markdownify
+`cross-encoder/ms-marco-MiniLM-L6-v2`) · own BM25 · Anthropic Claude Haiku 4.5
+(answers) and Sonnet 5.5 (faithfulness judge) · FastAPI · BeautifulSoup + markdownify
 
 ## How to run
 
@@ -142,9 +218,17 @@ curl -s localhost:8000/ask -H 'content-type: application/json' \
 
 # test and evaluate
 RAG_DB=outputs/chroma_db python test_hybrid.py     # also test_rag.py, test_api.py
-python compare_retrieval.py -k 10                  # search only, free
-python ten_questions.py --mode hybrid              # full pipeline, needs the server running
+RAG_DB=outputs/chroma_db python test_eval_recall.py   # also test_eval_answers.py; test_judge.py needs no database
+python compare_retrieval.py -k 10                  # 10 questions: search only, free
+python ten_questions.py --mode hybrid              # 10 questions: full pipeline, needs the server running
+python eval_recall.py --validate                   # 51 questions: check the file against the database
+python eval_recall.py                              # search only, all four modes, free
+python eval_answers.py --limit 3 --modes vector    # trial: 3 questions, a few cents
+python eval_answers.py                             # vector and hybrid_rerank on all 51: about $1.20
 ```
+
+`eval_answers.py` writes one set of files per mode (`outputs/eval_answers_<mode>.jsonl` and
+`.md`). `--compare` rebuilds the results table from them without any model call.
 
 An abridged reply from the last `curl`:
 
@@ -201,17 +285,25 @@ The full list, with numbers and the decisions I made, is in [MESSY_NOTES.md](MES
 
 ## Known limitations and next steps
 
-- Ten questions, one run each. A one-question difference is noise. The next step is
-  about 25 questions with evidence strings, scored for hit rate at top 3, 5 and 10
-  as well as answer quality.
+- 51 questions, one run each, written by me with the pages open. A difference of one to
+  three questions is noise, and the modes can't be separated on this set. The next step is
+  harder questions: written without the page open or taken from real users, with more
+  version and CVE questions.
+- The answer test compared vector with hybrid + reranker. Plain hybrid, the mode I
+  chose, has no answer results yet (about $0.60 to run).
+- The prompt has no rule for a question whose premise the docs correct (it refuses first
+  and then corrects), and the model does not always follow the fixed sentence for
+  off-topic requests or ask a clarifying question for a broad one.
 - A partial list presented as a full list (the payload and the security fixes
   above) isn't detected by any check yet. Ideas: a prompt rule to say when a list
   looks cut off, and adding each hit's neighbouring chunks.
 - Only one reranker was tried. A different one (`BAAI/bge-reranker-base`) is
   untested.
-- The automatic checks can't tell whether an answer is true; that part is manual.
-  Two evidence checks are strict (the push-payload tail; the "create a rule" steps,
-  which the question didn't need).
+- The faithfulness judge is a language model, run once per answer, so a borderline
+  answer can flip between runs. It checks an answer against the chunks, not against the
+  truth, and I checked only the 5 answers it flagged. Correctness is still read by hand.
+  Some evidence checks are strict (the push-payload tail; the "create a rule" steps; Q33,
+  where another chunk also answers the question).
 - Images are lost; only alt text remains (35 placeholders in 20 pages).
 - The 150 pages are a random sample, so some topics are missing (for example the
   system hooks page).

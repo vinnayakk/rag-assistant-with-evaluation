@@ -1,8 +1,3 @@
-"""Offline tests for judge.py: no API key, no network, no cost. A real anthropic client is pointed at a fake HTTP server,
-the same way test_api.py does it, so the request the judge sends and the way it reads the reply are both tested.
-Run:   python test_judge.py
-What this CANNOT test is whether the real judge model judges well. That is what the trial run and your own reading are for.
-"""
 import json
 import anthropic
 try:
