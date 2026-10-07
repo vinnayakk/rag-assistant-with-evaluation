@@ -274,3 +274,108 @@ Problems found:
   vague ones; measure the hit rate at top 3, 5 and 10 and score the answers.
 - Then try, one at a time: bge-reranker-base, adding neighbouring chunks, a prompt rule to
   say when a list looks cut off, and hybrid with 8 to 10 chunks.
+
+## Evaluation set and retrieval recall (2026-10-07)
+
+Q numbers in this section are the evaluation set's own (Q1 to Q51), not the 10-question
+test's.
+
+What I built:
+
+- eval_questions.jsonl: 51 questions. 43 have a right page and "evidence" strings that must
+  appear together in one retrieved chunk of that page. 8 have no page and cannot be scored by
+  search: 3 corpus gaps (Q44 to Q46), 2 off-topic (Q47, Q48) and 3 vague or too broad (Q49,
+  Q50, and Q51, which I wrote myself: "Which configurations for Linux packages are the most
+  important and which ones can be ignored?", expected reply: a clarifying question).
+- The 43 scored questions: direct 10, paraphrase 10, number 4, procedure 4, version 3,
+  error-message 3, crowded 2, negation 2, false-premise 2, API 1, deep 1, table 1.
+- eval_recall.py runs only the searches (no language model, no cost). For each mode it
+  records the rank of the first chunk from the right page (page recall) and the rank at which
+  the chunk that holds the evidence appears (evidence recall). `--validate` first checks that
+  every page is in the database and every evidence string is inside one chunk of its page.
+  Everything passed.
+- The questions were written with the pages open, so they share words with the pages. In a
+  first check BM25 alone found the right page at rank 1 for every question, so five were
+  reworded to use fewer of the page's words (Q19, Q22, Q33, Q37, Q40). The set is still easy.
+
+Results (43 scored questions, top 5, run on my MacBook):
+
+| mode          | page recall@5 | evidence recall@5 | evidence recall@1 | evidence recall@10 | MRR  | median search |
+| ------------- | ------------- | ----------------- | ----------------- | ------------------ | ---- | ------------- |
+| vector        | 43/43         | 41/43             | 30/43             | 42/43              | 0.96 | 12 ms         |
+| bm25          | 42/43         | 39/43             | 31/43             | 42/43              | 0.97 | 1 ms          |
+| hybrid        | 43/43         | 42/43             | 34/43             | 43/43              | 0.96 | 13 ms         |
+| hybrid_rerank | 42/43         | 41/43             | 35/43             | 41/43              | 0.98 | 270 ms        |
+
+Findings:
+
+- Page recall cannot tell the modes apart: 98 to 100% for all four at top 5 (the 95% interval
+  for 42/43 is 88 to 100%). All it shows is that the right page is nearly always found. At
+  rank 1 it is 40, 41, 40 and 42 of 43.
+- Evidence recall separates them a little. Hybrid is best at top 5 (42/43) and top 10 (43/43);
+  BM25 is weakest at top 5 (39/43). The gaps are one to three questions, so this is a lean,
+  not a proof. Against vector (evidence at top 5): BM25 gained Q25 and lost Q22, Q40 and Q43;
+  hybrid gained Q25 and lost none; hybrid+rerank gained Q25 and lost Q43.
+- Vector's weak spot is near-duplicate patch-release pages (the same problem as Q6 in the
+  10-question test). Q25 (the CVE fixed in 17.0.1): the right page came at rank 4 and the
+  chunk with the CVE at rank 6. BM25 put the chunk with the CVE at rank 1 and hybrid at rank
+  2, probably because the version number is a keyword.
+- BM25's weak spots: question words that are not on the page, and pages with many similar
+  chunks. Q22 (how an instance shows that a newer release is available): none of the page's
+  chunks were in its top 10, because it matched "security" and "releases" on unrelated pages.
+  Hybrid still found the page but moved it from rank 1 (vector) to rank 3. Q40 (labels API)
+  and Q43 (Windows hosted runners): BM25 put the page's Introduction first but the section
+  with the answer at rank 7 and rank 6. Hybrid had both at rank 1 and rank 3.
+- The reranker is best at rank 1 (35/43, against 34 for hybrid and 30 for vector) but no
+  better than hybrid at top 5 and worse at top 10 (41/43 against 43/43). It lost the right
+  page on Q43: three SAST "Getting started" chunks went to the top and the Windows page fell to
+  rank 6. Same pattern as the 10-question test, where it also moved the right chunk below
+  unrelated ones.
+- Q33 is scored as an evidence miss in every mode, but part of the fault is the question. The
+  evidence string ("a replacement for Kaniko") is a table row in the page's Introduction
+  chunk. The question ("which way of building images keeps my runners unprivileged?") is also
+  answered by the first "Migrate from Kaniko to BuildKit" chunk ("BuildKit rootless is a
+  secure alternative to Kaniko ... without privileged containers"). BM25 ranks that chunk first
+  (checked); in the other modes a "Migrate" section is in the top 3, but the report does not
+  say which of its two chunks. So evidence recall is probably understated by one question in
+  every mode, and the order of the modes does not change. Not fixed: the format cannot accept
+  two different chunks for one question. Changing the evidence to "without privileged
+  containers" and re-running the four modes would fix it.
+- Search time is the median of the search call only, after one warm-up search per mode. It is
+  lower than the README's 60, 82 and 355 ms, which came from timing_ms in the 10-question
+  test. I have not worked out why they differ. The first version of the report used the mean:
+  vector's mean was 17 ms because of one 224 ms search (median 12 ms), so it now reports the
+  median.
+
+Mistakes in my own tooling:
+
+- The first eval*recall.py wrote every mode to the same file names, so running the modes one
+  at a time replaced the previous mode's results (I renamed the files by hand). Now each mode
+  has its own files, outputs/eval_recall*<mode>.md and .jsonl, and the side-by-side report is
+  outputs/eval_recall_vector+bm25+hybrid+hybrid_rerank.md, built with `--compare` from the
+  saved .jsonl files without searching again. The file name is made from the modes in it, so
+  one run cannot replace another's file.
+
+Limits of this evaluation:
+
+- Only 43 scored questions, written by me with the pages open. Page recall is saturated, so
+  the numbers probably overstate how well search will do on real users' questions.
+- Search only. It says whether the chunk with the answer was retrieved, not whether the model
+  answered correctly with it. The 8 questions without a page are not scored at all.
+- One right page and one evidence chunk per question. Some questions have more than one
+  chunk that answers them (Q33).
+
+Decision: no change. Hybrid stays the choice and the reranker stays off. This agrees with the
+10-question test (hybrid best, reranker not helping), but the differences are one to three
+questions out of 43.
+
+## Next step after the evaluation (replaces the earlier ones)
+
+- Test the answers, not only the search: send all 51 questions through the API with hybrid,
+  like ten_questions.py, and check the reply type (answered, refused or clarifying) and the
+  answer against the page. This is the only way to score the 8 questions without a page.
+- Decide whether to fix Q33's evidence string and re-run the four modes.
+- Add harder questions: written without the page open, or taken from real users, with more
+  version and CVE questions and more pages that have many similar chunks (like the labels API).
+- Then try, one at a time: bge-reranker-base, adding neighbouring chunks, a prompt rule to
+  say when a list looks cut off, and hybrid with 8 to 10 chunks.
