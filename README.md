@@ -1,9 +1,18 @@
 # RAG Assistant with Evaluation
 
+[![Tests](https://github.com/vinnayakk/rag-assistant-with-evaluation/actions/workflows/tests.yml/badge.svg)](https://github.com/vinnayakk/rag-assistant-with-evaluation/actions/workflows/tests.yml)
+
 Ask a question about GitLab's documentation and get an answer with numbered
 citations, or an honest "I couldn't find this" when the docs don't say. Search
 combines meaning (vector) and exact words (BM25), with an optional reranker, and
 every change is measured on the same set of questions before it is trusted.
+
+![The hosted chat page: the visitor enters their own key, asks which security issues 16.11.1 fixed, gets a cited answer, then switches to vector search and opens "What the search found" for a second question](demo.gif)
+
+**Try it:** [rag-docs-assistant.streamlit.app](https://rag-docs-assistant.streamlit.app/). The demo does not pay for your questions:
+it asks for your own Anthropic API key, keeps it in the server's memory for that visit only, and a question costs roughly
+0.3 to 0.4 US cents on it. Use a key made for the demo, and delete it afterwards (see "Chat page and live demo" below).
+After you enter a key, the first visit waits while the embedding model loads.
 
 ## The problem
 
@@ -32,7 +41,7 @@ question ──► vector search ─┐                         │
         ▼
 Claude Haiku 4.5, sources numbered ──► cited answer | "I couldn't find this" | clarifying question
         ▼
-FastAPI: POST /ask
+FastAPI: POST /ask           Streamlit chat page (calls the same function)
 ```
 
 1. `download.py`, `clean.py`, `tidy.py` fetch the pages, convert HTML to Markdown
@@ -61,6 +70,9 @@ FastAPI: POST /ask
 7. `metrics.py` writes one line per `/ask` call (time of each step, tokens, cost) to
    `outputs/requests.jsonl`; `dashboard.py` shows the averages at `/dashboard`; `tracing.py`
    optionally sends each request to Langfuse as a trace (see "Observability").
+8. `streamlit_app.py` is the chat page that runs as the live demo. `app_backend.py` loads the
+   search index and the embedding model once, `guard.py` holds the limits used when the owner pays, and `chat_text.py`
+   has the text helpers (key check, citation links, escaping). See "Chat page and live demo".
 
 ## Evaluation
 
@@ -185,7 +197,8 @@ below are the numbers in that file. Two separate tests:
   test and 78 on average over the 51 (refusals are short).
 - Offline tests (`test_rag.py`, `test_api.py`, `test_hybrid.py`, `test_eval_recall.py`,
   `test_judge.py`, `test_eval_answers.py`, `test_observability.py`, `test_streamlit_app.py`) need no
-  API key and no network. They use a fake model server and a stored vector as the query.
+  API key and no network. They use a fake model server and a stored vector as the query. GitHub
+  Actions runs all of them on every push and pull request (`.github/workflows/tests.yml`).
 
 ## Observability: latency, cost and traces
 
@@ -232,12 +245,13 @@ restart (or run the `Install Certificates.command` that comes with the python.or
 export OTEL_EXPORTER_OTLP_CERTIFICATE="$(python -c 'import certifi; print(certifi.where())')"
 ```
 
-## Chat page (Streamlit)
+## Chat page and live demo
 
 `streamlit_app.py` is a chat front-end: example questions, a search-mode choice in the sidebar, answers with
 clickable `[n]` citations and a Sources list, and a "What the search found" list with each chunk's scores. It calls
 the same `api.ask` function as `POST /ask`, so every question also lands in the request log and the Langfuse trace.
-Each question is answered on its own (no memory of earlier ones), the same as the API.
+Each question is answered on its own (no memory of earlier ones), the same as the API. The live demo is at
+[rag-docs-assistant.streamlit.app](https://rag-docs-assistant.streamlit.app/).
 
 ```bash
 streamlit run streamlit_app.py     # http://localhost:8501; the terminal also prints a Network URL to open on a phone
@@ -256,22 +270,34 @@ The page's footer carries the CC BY-SA attribution for the documentation text.
 
 Tested offline with Streamlit's `AppTest` and a fake model (`test_streamlit_app.py`, about 40 scenarios: own keys, limits, passcode,
 error messages, citations as links, every mode) and looked at in a headless browser at phone and desktop width. The automated
-tests use a fake model; the owner has also run the page on a Mac with the real models (peak memory 714 MB there). The real deployment,
-and a real phone, are still to be checked.
+tests use a fake model. I have also run the page with the real models, on a Mac (peak memory 714 MB there) and on the hosted app
+(1,208 MB, rising to 1,483 MB once `hybrid_rerank` had been used; see the limitations). A test on a real phone is not recorded here yet.
 
-Deploying on Streamlit Community Cloud, in short: commit a copy of the search index as `data/chroma_db` (the app uses `outputs/chroma_db`
-when it exists and `data/chroma_db` otherwise), push to GitHub, then at share.streamlit.io choose **Create app**, pick the repository and
-`streamlit_app.py`, and leave **Secrets** empty so that visitors bring their own keys. The main risk is memory: the sidebar shows the app's
-peak memory, so read it on the hosted app. If the terminal prints `No module named 'torchvision'` when you run the page, it is harmless.
+**Hosting.** The live demo runs on Streamlit Community Cloud's free tier, from the `main` branch of this repository. It searches the
+copy of the index committed as `data/chroma_db` (the app uses `outputs/chroma_db` when that exists and `data/chroma_db` otherwise), and
+its **Secrets** are empty, so every visitor brings their own key. The embedding model loads after the first key is accepted, not at
+start-up, so the key page appears quickly and that first visit is slower; the reranker loads the first time `hybrid_rerank` is chosen.
+Streamlit redeploys the app on every push to `main`.
+
+To host your own copy: put the repository (with `data/chroma_db`) on your GitHub account, open share.streamlit.io, choose **Create app**,
+pick the repository and `streamlit_app.py`, and leave **Secrets** empty. To pay for the visitors yourself, paste your key and the
+guards' settings into **Secrets** instead (the lines are in `.streamlit/secrets.toml.example`), and set a spend limit on your Anthropic account.
+
+If the terminal prints `No module named 'torchvision'` when you run the page locally, it is harmless: Streamlit's file watcher imports
+an optional part of `transformers` that needs it. `quiet_watcher_log()` in `chat_text.py` hides that one message and nothing else.
 
 ## Stack
 
 Python · Chroma · sentence-transformers (`BAAI/bge-small-en-v1.5`,
 `cross-encoder/ms-marco-MiniLM-L6-v2`) · own BM25 · Anthropic Claude Haiku 4.5
 (answers) and Sonnet 5.5 (faithfulness judge) · FastAPI · BeautifulSoup + markdownify ·
-Langfuse (optional tracing) · Streamlit (chat page)
+Langfuse (optional tracing) · Streamlit (chat page) · Streamlit Community Cloud (hosting) ·
+GitHub Actions (tests)
 
 ## How to run
+
+To try it without installing anything, use the [live demo](https://rag-docs-assistant.streamlit.app/) (it asks for your own
+Anthropic key). To run everything yourself:
 
 ```bash
 git clone https://github.com/vinnayakk/rag-assistant-with-evaluation && cd rag-assistant-with-evaluation
@@ -322,6 +348,19 @@ RAG_DB=outputs/chroma_db python test_streamlit_app.py   # the page, limits and p
 
 `eval_answers.py` writes one set of files per mode (`outputs/eval_answers_<mode>.jsonl` and
 `.md`). `--compare` rebuilds the results table from them without any model call.
+
+**Tests on GitHub.** `.github/workflows/tests.yml` runs every `test_*.py` on each push and pull request (Python 3.12, no secrets).
+The tests replace the embedding model and the reranker with stand-ins, so the workflow installs `requirements.txt` without PyTorch,
+sentence-transformers and transformers, and uses the committed `data/chroma_db`. In a clean Python 3.12 environment the install took
+about 70 s and the tests about 45 s. To run the same loop yourself:
+
+```bash
+export RAG_DB=outputs/chroma_db        # or data/chroma_db
+for t in test_*.py; do echo "== $t"; python "$t" || break; done
+```
+
+A green check means the code, the fake model and the committed index work together. It does not call the Claude API, does not load the
+real models, and skips the Langfuse part of `test_observability.py` (Langfuse is not in `requirements.txt`).
 
 An abridged reply from the last `curl`:
 
@@ -404,9 +443,16 @@ The full list, with numbers and the decisions I made, is in [MESSY_NOTES.md](MES
   per-session one is reset by reloading the page, and without a passcode anyone can use up the day's allowance. The passcode has no lock-out (a shared
   lock-out would let anyone keep legitimate visitors out), only a one-second delay per wrong try, so it must be a long random
   phrase. They keep a public demo cheap; they are not security. A spend limit on the Anthropic account is the real cap.
-- How much memory the page needs on the free hosting is not known yet. PyTorch and the two models together peaked at about
-  1.2 GB in an estimate that used random weights of the same size as the real models, and the free tier's limit is quoted
-  anywhere between about 1 GB and 2.7 GB. The sidebar shows the real peak.
+- Memory is the main risk on the free hosting. On my Mac the page peaked at 714 MB with the real models. On the hosted app the
+  sidebar read 1,208 MB after two questions (hybrid, then vector; see the recording at the top), and 1,483 MB after a
+  `hybrid_rerank` question, which loads the reranker model for the first time. In a Linux test the app alone was at about 1 GB
+  before any model was loaded, and at about 1.2 GB in an estimate that used random weights of the same size as the real models.
+  The free tier's limit is quoted anywhere between about 1 GB and 2.7 GB; the app was still running at 1,483 MB, so the limit is
+  not below that. Several visitors at once were not tested and may push the peak higher. The sidebar (after a key is entered)
+  shows the app's peak memory.
+- The GitHub Actions check uses stand-in models and a fake model server (see "How to run"), so it cannot tell whether the real embedding
+  model, the reranker or the Claude API still work. It also does not hold back Streamlit's deploys: the hosted app updates on every
+  push to `main`, whether or not the tests passed.
 - `/dashboard` and `/stats` have no login. Keep the server on localhost, or put authentication in
   front of it, before exposing it. The dashboard shows the questions that were asked.
 - Langfuse: the automated tests use a stand-in server that reads what the code sends. Four real
@@ -425,7 +471,7 @@ The full list, with numbers and the decisions I made, is in [MESSY_NOTES.md](MES
 The raw GitLab pages are not in this repository (`outputs/` is git-ignored); `download.py` fetches
 them from docs.gitlab.com, so run it yourself. The search index used by the hosted demo is committed as
 `data/chroma_db/` and contains chunks of the documentation, with the attribution in
-[data/ATTRIBUTION.md](data/ATTRIBUTION.md). GitLab
+[data/ATTRIBUTION.md](data/ATTRIBUTION.md) and in the footer of the hosted page. GitLab
 publishes its documentation under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
 (it moved to that licence in 2018, see this
 [merge request](https://gitlab.com/gitlab-org/gitlab-runner/-/merge_requests/893)).

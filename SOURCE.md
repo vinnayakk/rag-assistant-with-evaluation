@@ -17,7 +17,10 @@
   product docs)
 - **Crawl behavior:** User-Agent names the project (the contact address in it is a placeholder), 1.5 s delay between requests,
   stops if the server blocks 5 requests in a row.
-- **Purpose:** personal learning project (RAG assistant with evaluation). The raw pages are not redistributed (`outputs/ is in .gitignore`). The chunks and their embeddings are published in `data/chroma_db/` for the hosted demo, with the attribution in `data/ATTRIBUTION.md`.
+- **Purpose:** personal learning project (RAG assistant with evaluation). The raw pages are not redistributed (`outputs/` is in `.gitignore`). The chunks and their embeddings are published in `data/chroma_db/` for the hosted demo, with the attribution in `data/ATTRIBUTION.md`.
+- **Hosted demo:** https://rag-docs-assistant.streamlit.app/ (Streamlit Community Cloud, live 2026-10-10). It searches the committed
+  copy of the index in `data/chroma_db/` (1,461 chunks from the 147 pages), shows the GitLab attribution in its footer, and asks each
+  visitor for their own Anthropic API key, so nothing is billed to me.
 - **License:** GitLab documentation is published under
   [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) (checked 2026-10-06).
   Attribution: documentation text is © GitLab Inc. If I ever publish cleaned text, chunks or
@@ -25,7 +28,7 @@
   CC BY-SA 4.0 licence. The code in this repository is MIT (see `LICENSE`).
   Not affiliated with GitLab.
 
-## Folder layout (all inside `outputs/`, none of it is in git)
+## Folder layout (all inside `outputs/`, which is not in git; a copy of `chroma_db/` is committed as `data/chroma_db/`)
 
 - `raw_html/` 150 downloaded pages (`download.py`)
 - `clean_text_v2/` Markdown conversion, 148 files (`clean.py`)
@@ -33,7 +36,7 @@
 - `excluded/` pages I removed from the corpus (`runner_agents.md`)
 - `url_map.json` real URL of each page, for citations (`build_url_map.py`)
 - `chunks.jsonl` 1,461 chunks (`chunk.py`)
-- `chroma_db/` the vector database (`embed_store.py`)
+- `chroma_db/` the vector database (`embed_store.py`); the copy in `data/chroma_db/` is what the hosted demo uses
 - `ten_questions_*.md` / `.jsonl`, `compare_retrieval.md` evaluation results
 
 An earlier plain-text pass (`clean_text/`, 150 files) was replaced by the Markdown conversion

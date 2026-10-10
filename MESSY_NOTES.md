@@ -650,3 +650,112 @@ Limits:
 
 Decision: no change. Hybrid stays the choice and the reranker stays off. The next steps above
 stand.
+
+## Chat page, own keys and deployment (2026-10-10)
+
+What I built:
+
+- `streamlit_app.py`: a chat page with example questions, a search-mode choice, answers with
+  clickable `[n]` citations and a Sources list, and a "What the search found" list with each
+  chunk's scores. It calls the same `api.ask` as `POST /ask`, so every question also lands in
+  `requests.jsonl` and in the Langfuse trace. `guard.py` (limits), `app_backend.py` (loads the
+  index and the embedding model once) and `chat_text.py` (key check, link and Markdown cleaning)
+  are plain modules, so they can be tested without the page.
+- `test_streamlit_app.py`: about 40 scenarios with Streamlit's `AppTest` and a fake model (own keys,
+  limits, passcode, error messages, citations as links, every search mode). It needs no key.
+- A copy of the search index committed as `data/chroma_db/` (1,461 chunks, 147 pages, about 29 MB),
+  and the app deployed on Streamlit Community Cloud: https://rag-docs-assistant.streamlit.app/
+- `.github/workflows/tests.yml`: runs the offline tests on every push and pull request.
+
+Decisions:
+
+- Visitors bring their own Anthropic key, instead of me paying for a public demo. Reason: I do not
+  want to spend money on strangers' questions or look after a key that anyone could try to drain.
+  The code keeps the other way too: if `ANTHROPIC_API_KEY` is set, the app pays and up to three
+  limits apply (an optional passcode, 20 questions per browser session, 200 per day for the whole app).
+- How the visitor's key is handled: it lives only in that visit's session memory on the server, a new
+  client is made for each question, and it is never put in `os.environ`, a file, a log, the request
+  log, a trace or the stored conversation. A key that Anthropic refuses is forgotten at once. The
+  tests check each of these places. The cost is that a visitor has to trust the host with the key
+  for a moment; the page says so and suggests a key made for the demo.
+- The limits live in an ordinary module, not in `st.cache_resource`. An independent AI review of
+  the page found 7 problems, and this one changed the design: Streamlit's server accepts a "clear cache"
+  message from any visitor's browser, which would have reset the counters and given everyone a
+  new daily allowance. The other six, all fixed: (1) a passcode lock-out shared by all visitors
+  would let anyone lock the others out, so a wrong try now only costs one second; (2) questions
+  that were turned away or failed were stored in the visitor's conversation, so anything a visitor
+  typed could pile up in the server's memory, and only answered questions are stored now; (3) when a visitor
+  clicked while the model was still working, Streamlit could stop the script before the answer
+  (already paid for) was stored, so it is stored inside the spinner block; (4) a secrets file that
+  exists but cannot be read was treated as "no secrets", which would have dropped a passcode, so
+  the app now refuses to start; (5) text from the model and from the corpus was shown as Markdown
+  and a set-up error showed a file path, so links are filtered and errors do not give paths;
+  (6) Streamlit runs each visitor in its own thread, and the embedding model and the reranker
+  could be called from several threads at once (Hugging Face tokenizers can fail with "Already
+  borrowed" when they are), so both are now used behind a lock (`embedder.py`, `reranker.py`).
+
+Lessons:
+
+- My first version of the test named one specific search result, which is true on the smaller index
+  I tested on and false on the real one, so it failed on my machine. The test now checks the page
+  against its own "What the search found" list and does not depend on which chunk ranks where. It
+  also has to work when `RAG_DB` is a relative path, which broke the test that starts the page in a
+  child process.
+- When running the page, the terminal printed `ModuleNotFoundError: No module named 'torchvision'`
+  about 100 times per page load. It is harmless: Streamlit's file watcher looks through the modules
+  `transformers` loads, which makes it import a few image processors (`*_fast`) that need
+  torchvision, and this project does not use torchvision. I hide that one message with a filter on that one logger
+  (`quiet_watcher_log()`); switching the watcher off would have hidden other things too.
+- "Does the test fail when the code is wrong?" is a separate question from "does the test pass?".
+  I broke the code on purpose 50 times (35 for the page, 3 for the log filter, 12 for the own-key
+  feature) and each break now makes at least one test fail. Four of the 12 own-key breaks were not
+  caught by my first tests (not checking that the key starts with `sk-ant-`, writing the key to the
+  log when a call fails, storing the key in the conversation, and showing the key box as plain text
+  instead of a password box); I added the missing checks until all were caught.
+
+What the numbers say:
+
+- Memory: 714 MB peak on my Mac. On the hosted app the sidebar read 1,208 MB after two questions
+  (hybrid, then vector; read from my demo recording) and 1,483 MB after a `hybrid_rerank` question,
+  which loads the reranker for the first time (+275 MB). In a Linux test the app alone was at about
+  1 GB before any model was loaded and about 1.2 GB with random weights of the real models' size.
+  I have not found the hosting limit stated exactly (quoted between about 1 GB and 2.7 GB); the app
+  kept running at 1,483 MB, so the limit is not below that.
+- Cost per question: $0.0037 (2,461 tokens in, 241 out) and $0.0026 (1,950 in, 129 out) in my request
+  log, and $0.0032 (hybrid, 2,534 tokens) and $0.0023 (vector, 1,965 tokens) on the hosted page, 1.6 s
+  each. The key page says "roughly 0.3 to 0.4 US cents"; these four questions are 0.23 to 0.37
+  cents, so "roughly" is doing a little work. Four questions are not a measurement of the average.
+- What I checked in Anthropic's documentation for the key page (2026-10-10): keys start with
+  `sk-ant-`; a key is created under Settings > API keys in the Console at
+  https://platform.claude.com/settings/keys; a spend limit is set under Settings > Billing.
+
+The workflow (`tests.yml`):
+
+- It runs every `test_*.py` (they are plain scripts that print "ok" lines and stop at the first
+  wrong result) in Python 3.12, with `RAG_DB=data/chroma_db` and no secrets.
+- It installs `requirements.txt` without `torch`, `sentence-transformers` and `transformers`: the
+  tests use stand-ins for the embedding model and the reranker, so the largest download is not
+  needed. I ran the same steps in a clean Python 3.12 environment: install about 70 s, all 8 test
+  scripts pass in about 44 s.
+- What it cannot tell me: it never calls the Claude API and never loads the real models, and it skips
+  the part of `test_observability.py` that needs Langfuse (Langfuse is not in `requirements.txt`).
+  It also does not stop Streamlit from deploying a push whose tests failed.
+- `pip` prints a warning that `narwhals==2.27.0` (pinned in `requirements.txt`) was yanked. It is
+  harmless so far and I have not changed the pin.
+
+Limits:
+
+- The hosted memory numbers come from a few questions by one visitor in all three modes. Several
+  visitors at once were not tested and may push the peak higher. Phone use is not tested on a real
+  phone yet; only a headless browser at phone width.
+- The live app depends on a free tier that can sleep when nobody uses it, and on a limit I could not
+  confirm.
+
+Open items:
+
+- Try the page on a real phone.
+- The answer test for plain hybrid (about $0.60) is still not run; the next steps in the section
+  above stand.
+
+Decision: no change to retrieval. Hybrid stays the choice, the reranker stays off, and the
+evaluation numbers above are unchanged by this work.
