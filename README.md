@@ -184,8 +184,8 @@ below are the numbers in that file. Two separate tests:
 - About 2,000 input tokens per question. Output was 120 to 160 tokens in the 10-question
   test and 78 on average over the 51 (refusals are short).
 - Offline tests (`test_rag.py`, `test_api.py`, `test_hybrid.py`, `test_eval_recall.py`,
-  `test_judge.py`, `test_eval_answers.py`, `test_observability.py`) need no API key and no
-  network. They use a fake model server and a stored vector as the query.
+  `test_judge.py`, `test_eval_answers.py`, `test_observability.py`, `test_streamlit_app.py`) need no
+  API key and no network. They use a fake model server and a stored vector as the query.
 
 ## Observability: latency, cost and traces
 
@@ -232,12 +232,44 @@ restart (or run the `Install Certificates.command` that comes with the python.or
 export OTEL_EXPORTER_OTLP_CERTIFICATE="$(python -c 'import certifi; print(certifi.where())')"
 ```
 
+## Chat page (Streamlit)
+
+`streamlit_app.py` is a chat front-end: example questions, a search-mode choice in the sidebar, answers with
+clickable `[n]` citations and a Sources list, and a "What the search found" list with each chunk's scores. It calls
+the same `api.ask` function as `POST /ask`, so every question also lands in the request log and the Langfuse trace.
+Each question is answered on its own (no memory of earlier ones), the same as the API.
+
+```bash
+streamlit run streamlit_app.py     # http://localhost:8501; the terminal also prints a Network URL to open on a phone
+```
+
+**Who pays for the questions.** If the app has no `ANTHROPIC_API_KEY`, it opens on a page that asks the visitor for their own Anthropic
+API key, and the questions are billed to it. The owner spends nothing and holds no key. The visitor's key is kept only in that visit's
+session memory on the server (not in `os.environ`, a file, a log, the request log or a trace; `test_streamlit_app.py` checks each) and is
+gone on reload. If `ANTHROPIC_API_KEY` is set instead, the app pays and has three guards (`guard.py`): an optional passcode
+(`APP_PASSCODE`), a limit per browser session (`APP_MAX_QUESTIONS`, 20) and a limit per day for the whole app (`APP_DAILY_LIMIT`, 200,
+about $0.55); a visitor can still switch to their own key in the sidebar. Those counters are in memory and restart with the app, and
+they cannot be reset from a browser (a separate AI review pass found that limits kept in `st.cache_resource` could be; they are now
+kept in an ordinary module and `test_streamlit_app.py` checks it).
+Settings come from environment variables or `.streamlit/secrets.toml` (see `.streamlit/secrets.toml.example`; none is required).
+The page's footer carries the CC BY-SA attribution for the documentation text.
+
+Tested offline with Streamlit's `AppTest` and a fake model (`test_streamlit_app.py`, about 40 scenarios: own keys, limits, passcode,
+error messages, citations as links, every mode) and looked at in a headless browser at phone and desktop width. The automated
+tests use a fake model; the owner has also run the page on a Mac with the real models (peak memory 714 MB there). The real deployment,
+and a real phone, are still to be checked.
+
+Deploying on Streamlit Community Cloud, in short: commit a copy of the search index as `data/chroma_db` (the app uses `outputs/chroma_db`
+when it exists and `data/chroma_db` otherwise), push to GitHub, then at share.streamlit.io choose **Create app**, pick the repository and
+`streamlit_app.py`, and leave **Secrets** empty so that visitors bring their own keys. The main risk is memory: the sidebar shows the app's
+peak memory, so read it on the hosted app. If the terminal prints `No module named 'torchvision'` when you run the page, it is harmless.
+
 ## Stack
 
 Python · Chroma · sentence-transformers (`BAAI/bge-small-en-v1.5`,
 `cross-encoder/ms-marco-MiniLM-L6-v2`) · own BM25 · Anthropic Claude Haiku 4.5
 (answers) and Sonnet 5.5 (faithfulness judge) · FastAPI · BeautifulSoup + markdownify ·
-Langfuse (optional tracing)
+Langfuse (optional tracing) · Streamlit (chat page)
 
 ## How to run
 
@@ -282,6 +314,10 @@ python ten_questions.py --mode hybrid              # asks 10 questions, so the l
 open http://127.0.0.1:8000/dashboard               # averages and chart (on Linux: xdg-open)
 python metrics.py                                  # the same averages in the terminal
 RAG_DB=outputs/chroma_db python test_observability.py   # log, dashboard and tracing tests, no key needed
+
+# chat page
+streamlit run streamlit_app.py                     # with ANTHROPIC_API_KEY set the app pays; without it the page asks each visitor for a key
+RAG_DB=outputs/chroma_db python test_streamlit_app.py   # the page, limits and passcode tests, no key needed
 ```
 
 `eval_answers.py` writes one set of files per mode (`outputs/eval_answers_<mode>.jsonl` and
@@ -361,6 +397,16 @@ The full list, with numbers and the decisions I made, is in [MESSY_NOTES.md](MES
   truth, and I checked only the 5 answers it flagged. Correctness is still read by hand.
   Some evidence checks are strict (the push-payload tail; the "create a rule" steps; Q33,
   where another chunk also answers the question).
+- When visitors bring their own API key, the key passes through the app's server (it is kept in memory for the visit only),
+  so a visitor has to trust whoever runs the app and its host; the page says so and suggests a key made for the demo.
+  The code never stores or logs a key and the tests check that, but a visitor cannot see what is deployed.
+- If the owner's own key is used instead, the chat page's limits are counters in memory: they reset when the app restarts, the
+  per-session one is reset by reloading the page, and without a passcode anyone can use up the day's allowance. The passcode has no lock-out (a shared
+  lock-out would let anyone keep legitimate visitors out), only a one-second delay per wrong try, so it must be a long random
+  phrase. They keep a public demo cheap; they are not security. A spend limit on the Anthropic account is the real cap.
+- How much memory the page needs on the free hosting is not known yet. PyTorch and the two models together peaked at about
+  1.2 GB in an estimate that used random weights of the same size as the real models, and the free tier's limit is quoted
+  anywhere between about 1 GB and 2.7 GB. The sidebar shows the real peak.
 - `/dashboard` and `/stats` have no login. Keep the server on localhost, or put authentication in
   front of it, before exposing it. The dashboard shows the questions that were asked.
 - Langfuse: the automated tests use a stand-in server that reads what the code sends. Four real
@@ -376,8 +422,10 @@ The full list, with numbers and the decisions I made, is in [MESSY_NOTES.md](MES
 
 ## Data and licence
 
-The GitLab documentation is not included in this repository (`outputs/` is
-git-ignored). `download.py` fetches it from docs.gitlab.com; run it yourself. GitLab
+The raw GitLab pages are not in this repository (`outputs/` is git-ignored); `download.py` fetches
+them from docs.gitlab.com, so run it yourself. The search index used by the hosted demo is committed as
+`data/chroma_db/` and contains chunks of the documentation, with the attribution in
+[data/ATTRIBUTION.md](data/ATTRIBUTION.md). GitLab
 publishes its documentation under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
 (it moved to that licence in 2018, see this
 [merge request](https://gitlab.com/gitlab-org/gitlab-runner/-/merge_requests/893)).

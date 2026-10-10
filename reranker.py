@@ -1,7 +1,8 @@
-import os, re
+import os, re, threading
 
 MODEL_NAME = os.environ.get("RAG_RERANKER", "cross-encoder/ms-marco-MiniLM-L6-v2")
 _model = None
+_load_lock = threading.Lock()
 
 
 def _words(s):
@@ -15,9 +16,12 @@ def score_pairs(query, texts):
         return [len(q & _words(t)) / (len(q) or 1) for t in texts]
     global _model
     if _model is None:
-        from sentence_transformers import CrossEncoder
-        _model = CrossEncoder(MODEL_NAME, max_length=512)    # question + chunk longer than 512 tokens: the end is cut
-    return [float(x) for x in _model.predict([(query, t) for t in texts], batch_size=16, show_progress_bar=False)]
+        with _load_lock:                                     # two visitors' first questions must not each load the model
+            if _model is None:
+                from sentence_transformers import CrossEncoder
+                _model = CrossEncoder(MODEL_NAME, max_length=512)    # question + chunk longer than 512 tokens: the end is cut
+    with _load_lock:                                         # one rerank at a time: Hugging Face tokenizers can fail ("Already borrowed")
+        return [float(x) for x in _model.predict([(query, t) for t in texts], batch_size=16, show_progress_bar=False)]   # when used from several threads
 
 
 def rerank(query, chunks):

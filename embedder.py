@@ -1,4 +1,4 @@
-import os, re, hashlib
+import os, re, hashlib, threading
 import numpy as np
 
 MODEL_NAME = "BAAI/bge-small-en-v1.5"          # 384 numbers per text, reads up to 512 tokens, free, runs locally
@@ -6,6 +6,7 @@ QUERY_PREFIX = "Represent this sentence for searching relevant passages: "   # r
 DIM = 384
 
 _model = None
+_query_lock = threading.Lock()     # a web server answers several visitors at once; Hugging Face tokenizers can fail ("Already borrowed") when used from several threads
 def _load():
     global _model
     if _model is None:
@@ -31,4 +32,5 @@ def embed_documents(texts, show_progress=True):
 def embed_query(text):
     if os.environ.get("FAKE_EMBED"):
         return _fake([text])[0]
-    return _load().encode([QUERY_PREFIX + text], normalize_embeddings=True)[0]
+    with _query_lock:          # one query at a time (each takes tens of milliseconds); also means the model is loaded only once
+        return _load().encode([QUERY_PREFIX + text], normalize_embeddings=True)[0]

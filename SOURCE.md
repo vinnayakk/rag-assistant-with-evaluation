@@ -17,8 +17,7 @@
   product docs)
 - **Crawl behavior:** User-Agent names the project (the contact address in it is a placeholder), 1.5 s delay between requests,
   stops if the server blocks 5 requests in a row.
-- **Purpose:** personal learning project (RAG assistant with evaluation). The downloaded
-  pages are not redistributed: `outputs/` is in `.gitignore`.
+- **Purpose:** personal learning project (RAG assistant with evaluation). The raw pages are not redistributed (`outputs/ is in .gitignore`). The chunks and their embeddings are published in `data/chroma_db/` for the hosted demo, with the attribution in `data/ATTRIBUTION.md`.
 - **License:** GitLab documentation is published under
   [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) (checked 2026-10-06).
   Attribution: documentation text is © GitLab Inc. If I ever publish cleaned text, chunks or

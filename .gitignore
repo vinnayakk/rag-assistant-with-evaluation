@@ -9,3 +9,8 @@ outputs/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+
+DEPLOY.md
+
+.streamlit/secrets.toml
