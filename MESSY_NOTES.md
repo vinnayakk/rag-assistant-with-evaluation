@@ -626,12 +626,12 @@ region, SDK 4.17.0):
 Setup problem found on the way (certificates):
 
 - The first traces did not arrive. The server log showed `CERTIFICATE_VERIFY_FAILED ... unable
-  to get local issuer certificate` for cloud.langfuse.com, although start-up had said "connected
+to get local issuer certificate` for cloud.langfuse.com, although start-up had said "connected
   to Langfuse". The Langfuse SDK uses two HTTP clients with two lists of trusted certificate
   authorities: the key check uses the `certifi` list, the trace sender uses Python's own list
   (or the file named in `OTEL_EXPORTER_OTLP_CERTIFICATE`). So the key check passed and every
   trace failed. Setting `OTEL_EXPORTER_OTLP_CERTIFICATE="$(python -c 'import certifi;
-  print(certifi.where())')"` fixed it. I did not run the check that shows why my Python's own
+print(certifi.where())')"` fixed it. I did not run the check that shows why my Python's own
   list fails. The first traced request was dropped after its retries failed and is not in
   Langfuse.
 - Lesson: a start-up check must use the same path as the thing it checks. The check now tests
@@ -752,7 +752,7 @@ Limits:
 - The live app depends on a free tier that can sleep when nobody uses it, and on a limit I could not
   confirm.
 
-Open items:
+The open items:
 
 - The answer test for plain hybrid (about $0.60) is still not run; the next steps in the section
   above stand.
