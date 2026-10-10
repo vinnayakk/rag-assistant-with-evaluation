@@ -6,6 +6,8 @@ try:
 except ImportError:
     import httpx as httpx_for_llm
 
+os.environ["RAG_DB"] = str(pathlib.Path(os.environ.get("RAG_DB", "outputs/chroma_db")).resolve())   # absolute path: this test changes folder later, and Chroma opens new database connections by the path it was given
+
 import rag, judge
 import eval_answers as ev
 
