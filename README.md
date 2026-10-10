@@ -58,6 +58,9 @@ FastAPI: POST /ask
    model, no cost) and `eval_answers.py` runs the whole pipeline and checks every answer
    with a faithfulness judge (`judge.py`). `query.py` is a quick vector-search-only
    command for looking at what the database returns.
+7. `metrics.py` writes one line per `/ask` call (time of each step, tokens, cost) to
+   `outputs/requests.jsonl`; `dashboard.py` shows the averages at `/dashboard`; `tracing.py`
+   optionally sends each request to Langfuse as a trace (see "Observability").
 
 ## Evaluation
 
@@ -133,13 +136,13 @@ below are the numbers in that file. Two separate tests:
 
 **Answers** (all 51 questions, 5 chunks each; plain hybrid was not run):
 
-| Measure                                      | vector      | hybrid + reranker |
-| -------------------------------------------- | ----------- | ----------------- |
-| Right kind of reply                          | 46/51 (90%) | 47/51 (92%)       |
-| Answered, of the 43 the docs can answer      | 40/43       | 41/43             |
-| Refused or asked back, of the 7 that must be | 5/7         | 5/7               |
-| Faithful answers                             | 37/40 (92%) | 39/41 (95%)       |
-| Claims backed by the chunks                  | 149/152     | 146/148           |
+| Measure                                      | vector        | hybrid + reranker |
+| -------------------------------------------- | ------------- | ----------------- |
+| Right kind of reply                          | 46/51 (90%)   | 47/51 (92%)       |
+| Answered, of the 43 the docs can answer      | 40/43         | 41/43             |
+| Refused or asked back, of the 7 that must be | 5/7           | 5/7               |
+| Faithful answers                             | 37/40 (92%)   | 39/41 (95%)       |
+| Claims backed by the chunks                  | 149/152       | 146/148           |
 
 - The modes are hard to tell apart. Page recall is 98 to 100% for all four. Hybrid is
   best at evidence top 5 and top 10, and the reranker at rank 1, but the gaps are one to
@@ -163,6 +166,8 @@ below are the numbers in that file. Two separate tests:
 - Faithfulness is counted over the answers actually given, so a mode that refuses more
   has fewer chances to be wrong. Here both modes gave 41 answers.
 - The whole run cost about $1.20 (about $0.60 per mode, 80% of it for the judge).
+- Five wrong answers, each with the stage where it went wrong (search, reranker, prompt,
+  model), are written up in [WRONG_ANSWERS.md](WRONG_ANSWERS.md).
 
 ## Results
 
@@ -179,14 +184,60 @@ below are the numbers in that file. Two separate tests:
 - About 2,000 input tokens per question. Output was 120 to 160 tokens in the 10-question
   test and 78 on average over the 51 (refusals are short).
 - Offline tests (`test_rag.py`, `test_api.py`, `test_hybrid.py`, `test_eval_recall.py`,
-  `test_judge.py`, `test_eval_answers.py`) need no API key and no network. They use a fake
-  model server and a stored vector as the query.
+  `test_judge.py`, `test_eval_answers.py`, `test_observability.py`) need no API key and no
+  network. They use a fake model server and a stored vector as the query.
+
+## Observability: latency, cost and traces
+
+Every call to `POST /ask` appends one line to `outputs/requests.jsonl`: the question, search
+mode, status, tokens, cost in dollars, and the time of the search, the model call and the whole
+request. Cost is tokens times the prices in `metrics.py` (checked on 2026-10-08; update them
+when prices or models change). A model with no listed price gets no cost, not a cost of zero.
+A request where the model call failed is logged as `error` and counted separately, not
+averaged in.
+
+- **`/dashboard`** shows the averages from that file: latency as mean, median and 95th
+  percentile (a mean alone hides a few slow requests), cost per request and per 1,000 requests,
+  total cost, a split by search mode, and a bar chart of where the time went in the last 40
+  requests. `?mode=hybrid` and `?last=100` filter it, and `/stats` returns the same numbers as
+  JSON. It reads the local file, so it needs no account. `python metrics.py` prints the same
+  averages in the terminal.
+  The first request in `hybrid_rerank` mode on a server started in another mode also loads the
+  reranker model (about 4 s, one slow search); starting with `RAG_RETRIEVAL=hybrid_rerank` loads it at start-up.
+- **Langfuse (optional)** adds one trace per request: `ask` > `search` (the chunks found, with their
+  `distance`, `bm25`, `rrf` and `rerank_score`; `null` means that search did not return the chunk) and
+  `llm` (the exact prompt, the answer, tokens and cost). It is how you open a wrong answer and see
+  whether the right chunk was there. It is off unless both keys are set, and a tracing problem
+  never breaks an answer. It adds about 4 billable units per request on Langfuse's count (the
+  free plan has 50,000 a month and keeps data for 30 days).
+
+```bash
+pip install langfuse "opentelemetry-exporter-otlp-proto-http==1.45.0"   # the pin avoids a clash with Chroma
+export LANGFUSE_PUBLIC_KEY="pk-lf-..." LANGFUSE_SECRET_KEY="sk-lf-..."
+export LANGFUSE_BASE_URL="https://cloud.langfuse.com"     # US region: https://us.cloud.langfuse.com
+RAG_RETRIEVAL=hybrid uvicorn api:app       # the log says "tracing is on: connected to Langfuse"
+```
+
+Privacy: a trace holds the question, the chunks and the answer. GitLab's documentation is
+public, so that is fine here; with private documents, check the region, the retention and
+Langfuse's masking options first. `RAG_TRACING=0` switches tracing off without removing the keys.
+
+Troubleshooting (macOS): if the server log shows `CERTIFICATE_VERIFY_FAILED` for `cloud.langfuse.com`, or
+start-up says that Python cannot verify Langfuse's certificate, no traces arrive even though the keys are
+right. The SDK checks the keys with one list of trusted certificate authorities (`certifi`), but sends traces
+with Python's own list, which is empty in some python.org installs. Point the sender at the `certifi` list and
+restart (or run the `Install Certificates.command` that comes with the python.org installer):
+
+```bash
+export OTEL_EXPORTER_OTLP_CERTIFICATE="$(python -c 'import certifi; print(certifi.where())')"
+```
 
 ## Stack
 
 Python · Chroma · sentence-transformers (`BAAI/bge-small-en-v1.5`,
 `cross-encoder/ms-marco-MiniLM-L6-v2`) · own BM25 · Anthropic Claude Haiku 4.5
-(answers) and Sonnet 5.5 (faithfulness judge) · FastAPI · BeautifulSoup + markdownify
+(answers) and Sonnet 5.5 (faithfulness judge) · FastAPI · BeautifulSoup + markdownify ·
+Langfuse (optional tracing)
 
 ## How to run
 
@@ -225,6 +276,12 @@ python eval_recall.py --validate                   # 51 questions: check the fil
 python eval_recall.py                              # search only, all four modes, free
 python eval_answers.py --limit 3 --modes vector    # trial: 3 questions, a few cents
 python eval_answers.py                             # vector and hybrid_rerank on all 51: about $1.20
+
+# latency and cost (needs the server running and some questions asked)
+python ten_questions.py --mode hybrid              # asks 10 questions, so the log has something in it
+open http://127.0.0.1:8000/dashboard               # averages and chart (on Linux: xdg-open)
+python metrics.py                                  # the same averages in the terminal
+RAG_DB=outputs/chroma_db python test_observability.py   # log, dashboard and tracing tests, no key needed
 ```
 
 `eval_answers.py` writes one set of files per mode (`outputs/eval_answers_<mode>.jsonl` and
@@ -304,6 +361,13 @@ The full list, with numbers and the decisions I made, is in [MESSY_NOTES.md](MES
   truth, and I checked only the 5 answers it flagged. Correctness is still read by hand.
   Some evidence checks are strict (the push-payload tail; the "create a rule" steps; Q33,
   where another chunk also answers the question).
+- `/dashboard` and `/stats` have no login. Keep the server on localhost, or put authentication in
+  front of it, before exposing it. The dashboard shows the questions that were asked.
+- Langfuse: the automated tests use a stand-in server that reads what the code sends. Four real
+  requests were also traced into a Langfuse Cloud account (EU region, SDK 4.17.0, 2026-10-09), and the
+  tokens, cost and timings in Langfuse matched the request log. That match shows the numbers travel
+  intact; it does not show the prices are right, because this code sends the cost. The price table in
+  `metrics.py` is from the Anthropic pricing page: check the totals against your Anthropic usage page.
 - Images are lost; only alt text remains (35 placeholders in 20 pages).
 - The 150 pages are a random sample, so some topics are missing (for example the
   system hooks page).

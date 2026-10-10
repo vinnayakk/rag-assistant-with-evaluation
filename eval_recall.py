@@ -19,7 +19,7 @@ def norm_path(url):
 
 
 def wilson(hits, n, z=1.96):
-    """95% interval for a share hits/n. With 40 questions it is wide: that is the point."""
+    """95% interval for a share hits/n. With 40 questions it is wide."""
     if n == 0:
         return 0.0, 0.0
     p = hits / n
@@ -42,7 +42,7 @@ def load_questions(path):
 
 
 def out_file(prefix, modes, suffix):
-    """The file name is made from the modes it holds, and from nothing else:
+    """The file name is made from the modes it holds:
          ('outputs/eval_recall', ['vector'], '.md')                    -> outputs/eval_recall_vector.md
          ('outputs/eval_recall', ['vector', 'bm25'], '.md')            -> outputs/eval_recall_vector+bm25.md
     Two different sets of modes can never get the same name, so one run cannot replace another's file."""

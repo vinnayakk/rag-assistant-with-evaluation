@@ -530,3 +530,123 @@ with the new prompt under a new `--out` prefix, and record it here.
   version and CVE questions and more pages that have many similar chunks (like the labels API).
 - Then try, one at a time: bge-reranker-base, adding neighbouring chunks, a prompt rule to
   say when a list looks cut off, and hybrid with 8 to 10 chunks.
+
+## Request log, dashboard and Langfuse traces (2026-10-09)
+
+Q numbers in this section are the 10-question test's (Q3 and Q6) again.
+
+What I built:
+
+- `metrics.py`: one JSON line for every call to `POST /ask` in `outputs/requests.jsonl`: the
+  question, search mode, reply type, tokens, cost, and the time of the search, the model call
+  and the whole request. Cost is tokens times the prices in the file (Haiku 4.5: $1 per million
+  input tokens, $5 per million output tokens, from the Anthropic pricing page, checked
+  2026-10-08). A model that is not in the price table gets no cost instead of $0. A request
+  whose model call failed is logged as an error and left out of the averages.
+- `dashboard.py`: `/dashboard` (and `/stats` as JSON) shows mean, median and 95th percentile
+  latency, cost per request and per 1,000 requests, a table by search mode and a bar chart of
+  search time against model time. It reads the local file, so it needs no account. It has no
+  login, so it stays on localhost.
+- `tracing.py`: optional Langfuse tracing, one trace per request: `ask` > `search` (the chunks
+  found, with their distance, bm25, rrf and rerank scores) + `llm` (the exact prompt, the
+  answer, tokens and cost). It is off unless both keys are set, and a tracing problem cannot
+  break an answer.
+- `test_observability.py` runs offline, with a fake model server and a stand-in for Langfuse.
+
+Results of the first real run: 30 requests, the 10 questions of `ten_questions.py` in each of
+three modes, 5 chunks, Claude Haiku 4.5, 2026-10-09 17:41 to 17:44 UTC:
+
+| mode          | requests | mean   | median | 95th pct | avg search | avg model call | cost per request | tokens in / out |
+| ------------- | -------- | ------ | ------ | -------- | ---------- | -------------- | ---------------- | --------------- |
+| vector        | 10       | 2.38 s | 1.92 s | 5.17 s   | 63 ms      | 2.32 s         | $0.0028          | 2,136 / 132     |
+| hybrid        | 10       | 2.14 s | 1.67 s | 3.88 s   | 106 ms     | 2.03 s         | $0.0028          | 2,096 / 145     |
+| hybrid_rerank | 10       | 2.76 s | 1.88 s | 8.50 s   | 756 ms     | 2.00 s         | $0.0026          | 1,965 / 129     |
+| all           | 30       | 2.43 s | 1.80 s | 5.17 s   | 309 ms     | 2.12 s         | $0.0027          | 2,066 / 135     |
+
+The 30 requests cost $0.0823 in total ($2.74 per 1,000 requests). Replies: 16 answered, 11
+refused, 3 clarifying, no errors. Latency is the server's own time for `/ask` (search plus
+model call), not the network or any queue.
+
+Findings:
+
+- Ten requests per mode are too few for a mean or a 95th percentile; with 10 requests the
+  95th percentile is simply the slowest one. The slowest vector request was the first of the
+  run (5.2 s, of which 5.1 s was the model call). The slowest hybrid_rerank request was 8.5 s,
+  of which 4.3 s was search.
+- That 4.3 s search was the first hybrid_rerank request. The other nine took 335 to 396 ms
+  (361 ms on average, the same as the 361 ms of the answer run). Without the first request the
+  average total is 2.12 s instead of 2.76 s. After I restarted the server for Langfuse, the
+  first hybrid_rerank request again spent 3.7 s in search. This fits `api.py`, which loads the
+  reranker at start-up only when the server's default mode is hybrid_rerank and otherwise on
+  first use; I chose the mode per request. I have not timed the model load separately.
+- The median is the number to quote: 1.67 to 1.92 s in all three modes. Speed does not
+  separate the modes except for the reranker's search: about 0.36 s, against 0.06 s (vector)
+  and 0.08 s (hybrid) when each mode's first request is left out.
+- Cost is about the same in every mode, $0.0026 to $0.0028 per request. The differences come
+  from the tokens in the 5 chunks and in the reply (2,136, 2,096 and 1,965 input tokens on
+  average), and 10 requests per mode do not say more than that.
+- The reply types agree with the 10-question test above. Q6 (security fixes in 16.11.1): vector
+  refused, hybrid and hybrid_rerank answered. Q3 (push payload): vector and hybrid answered,
+  hybrid_rerank refused. The cgroups question (Q7), the GitHub question (Q9) and the system
+  hooks question (Q8) were refused in all three modes, and the vague one (Q10) got a clarifying
+  question in all three. Q8 shows the run-to-run variation: before, hybrid_rerank answered it
+  (partly); this time it refused.
+
+What the traces showed (5 traced requests, 2026-10-09 19:03 to 19:30 UTC, Langfuse Cloud EU
+region, SDK 4.17.0):
+
+- Langfuse and my log agree on all 4 traces that arrived: tokens and cost are identical,
+  timings are within 1 ms, and the `trace_id` in the log is the id Langfuse shows. That shows
+  the numbers travel intact. It does not check the prices, because my code sends the cost to
+  Langfuse. To check the price table I still have to compare the total with the Anthropic
+  usage page.
+- Q6, with the exact prompt in front of me. Vector: the model's 5 sources were the 16.10.3
+  introduction, two 16.11.1 introductions, the 17.0.1 introduction and the 18.3.1 "Security
+  fixes"; none of the 16.11.1 "Security fixes" chunks (the fix table and one per CVE). The
+  first source, the 16.10.3 introduction, says "This patch release does not include any
+  security fixes": it shares the question's words and means the opposite. The model started
+  with the fixed refusal sentence and went on that the security issues "are not detailed in
+  the provided documentation" and "may not have been listed at the time of the patch release
+  announcement". That explanation is wrong. The page lists 5 fixes, but the model only sees
+  its 5 chunks, so it blamed the documentation for a search failure. Hybrid: all 5 chunks came
+  from the 16.11.1 page (2 introduction chunks and 3 "Security fixes" chunks, one of them
+  the fix table), and the answer lists all 5 fixes with their severity (3 High, 2 Medium), as
+  in the table.
+- Q3, same method. Hybrid: the JSON chunk the model was given ends at `"ci_config_path": null,`
+  and the rest of the payload is in the next chunk, which was not among the 5. The answer
+  lists 15 top-level fields, `project` with its nested fields, and `commits` and
+  `total_commits_count` (from the prose chunk). It opens with "the fields include:" and does
+  not say that the list is cut off. This is the partial-list failure from before, now visible
+  in the prompt itself. hybrid_rerank: the 5 chunks were three merge-request chunks, the Push
+  events introduction (which ends at "Payload example:") and Work item events. The JSON chunk
+  was missing, and the reply said that the sources mention push events but give no list of
+  fields. This is the earlier finding that the reranker pushes the payload chunk below
+  merge-request chunks.
+
+Setup problem found on the way (certificates):
+
+- The first traces did not arrive. The server log showed `CERTIFICATE_VERIFY_FAILED ... unable
+  to get local issuer certificate` for cloud.langfuse.com, although start-up had said "connected
+  to Langfuse". The Langfuse SDK uses two HTTP clients with two lists of trusted certificate
+  authorities: the key check uses the `certifi` list, the trace sender uses Python's own list
+  (or the file named in `OTEL_EXPORTER_OTLP_CERTIFICATE`). So the key check passed and every
+  trace failed. Setting `OTEL_EXPORTER_OTLP_CERTIFICATE="$(python -c 'import certifi;
+  print(certifi.where())')"` fixed it. I did not run the check that shows why my Python's own
+  list fails. The first traced request was dropped after its retries failed and is not in
+  Langfuse.
+- Lesson: a start-up check must use the same path as the thing it checks. The check now tests
+  the trace sender's certificate path as well and prints the fix when it fails; the README has
+  a troubleshooting note, and `test_observability.py` reproduces the problem with a local HTTPS
+  server.
+
+Limits:
+
+- 10 requests per mode, one run, the same 10 questions: means and 95th percentiles are not
+  stable, and the reply types come from one run each.
+- The cost comes from my price table, not from an invoice.
+- 5 traced requests only. The dashboard has no login. A trace holds the question, the chunks
+  and the answer: fine for GitLab's public documentation, but region, retention and masking
+  need checking before private documents go through it.
+
+Decision: no change. Hybrid stays the choice and the reranker stays off. The next steps above
+stand.

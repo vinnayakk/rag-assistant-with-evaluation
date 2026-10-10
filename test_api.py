@@ -1,4 +1,5 @@
-import json, os
+import json, os, tempfile
+os.environ["RAG_REQUEST_LOG"] = os.path.join(tempfile.mkdtemp(), "requests.jsonl")   # test requests must not land in the real log
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")            # so start-up builds a client (never used for real)
 os.environ["FAKE_RERANK"] = "1"                                    # word-overlap stand-in for the reranker model
 import numpy as np, anthropic
