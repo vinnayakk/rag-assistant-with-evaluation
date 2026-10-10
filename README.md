@@ -271,7 +271,7 @@ The page's footer carries the CC BY-SA attribution for the documentation text.
 Tested offline with Streamlit's `AppTest` and a fake model (`test_streamlit_app.py`, about 40 scenarios: own keys, limits, passcode,
 error messages, citations as links, every mode) and looked at in a headless browser at phone and desktop width. The automated
 tests use a fake model. I have also run the page with the real models, on a Mac (peak memory 714 MB there) and on the hosted app
-(1,208 MB, rising to 1,483 MB once `hybrid_rerank` had been used; see the limitations). A test on a real phone is not recorded here yet.
+(1,208 MB, rising to 1,483 MB once `hybrid_rerank` had been used; see the limitations). On 2026-10-10 I also opened the hosted app on a real phone, and it loaded fine.
 
 **Hosting.** The live demo runs on Streamlit Community Cloud's free tier, from the `main` branch of this repository. It searches the
 copy of the index committed as `data/chroma_db` (the app uses `outputs/chroma_db` when that exists and `data/chroma_db` otherwise), and

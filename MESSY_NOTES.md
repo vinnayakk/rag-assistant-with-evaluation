@@ -746,14 +746,14 @@ The workflow (`tests.yml`):
 Limits:
 
 - The hosted memory numbers come from a few questions by one visitor in all three modes. Several
-  visitors at once were not tested and may push the peak higher. Phone use is not tested on a real
-  phone yet; only a headless browser at phone width.
+  visitors at once were not tested and may push the peak higher. The hosted app was opened on a real
+  phone (2026-10-10) and loaded fine; apart from that I only looked at the page in a headless browser
+  at phone width.
 - The live app depends on a free tier that can sleep when nobody uses it, and on a limit I could not
   confirm.
 
 Open items:
 
-- Try the page on a real phone.
 - The answer test for plain hybrid (about $0.60) is still not run; the next steps in the section
   above stand.
 
